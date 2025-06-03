@@ -17,6 +17,7 @@ require('dotenv').config();
 
 const WS_PORT = process.env.WS_PORT;
 const HTTP_PORT = process.env.HTTP_PORT;
+const WS_URL = process.env.WS_URL;
 
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
@@ -87,7 +88,7 @@ udpServer.bind(9090, () => {
 wsServer.on('connection', (ws, req)=>{
 	const clientIP = req.socket.remoteAddress;
     console.log(`Client IP: ${clientIP} connected`);
-	connectedClients.push(ws);
+	// connectedClients.push(ws);
 
 	ws.on('message', data => {
 		// console.log(ws.bufferedAmount)
@@ -95,6 +96,7 @@ wsServer.on('connection', (ws, req)=>{
 		if(data.indexOf("WEB_CLIENT") != -1) {
 			webClients.push(ws);
 			console.log("WEB_CLIENT ADDED");
+
 			db.query(queryTemp, (err, results) => {
 			    if (err) {
 			        console.error('Error fetching data:', err);
@@ -125,13 +127,6 @@ wsServer.on('connection', (ws, req)=>{
 			}
 		});
 
-		connectedClients.forEach((ws, i) => {
-			if(connectedClients[i] != ws || ws.readyState != ws.OPEN){
-				connectedClients.splice(i, 1);
-				console.log("CLIENT DISCONNECTED")
-			}
-		});
-
 		if (Buffer.isBuffer(data)) {  // Handle binary data (JPEG)
             // const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             now = new Date();
@@ -143,11 +138,11 @@ wsServer.on('connection', (ws, req)=>{
 			seconds = String(now.getSeconds()).padStart(2, '0');
 			milliseconds = String(now.getMilliseconds()).padStart(2, '0');
 
-			formattedTime = `${hours}-${minutes}-${seconds}-${milliseconds}`;
-			formattedDate = `${year}-${month}-${day}`;
-			//
+			formattedTime = `${minutes}-${seconds}-${milliseconds}`;
+			formattedDate = `${year}-${month}-${day}-${hours}`;
+			
             const filepath = baseFilePath + formattedDate + "/";
-            //
+            
             if (fs.existsSync(filepath)) {
 				const filename = `image-${formattedTime}.jpg`;
 	            const fullpath = path.join(filepath, filename);
@@ -168,6 +163,7 @@ wsServer.on('connection', (ws, req)=>{
 
 	ws.on("error", (error) => {
 		console.error("Websocket error observed: ", error);
+		ws.close();
 	});
 
 	ws.on("close", () => {
@@ -186,4 +182,19 @@ function broadcastMessage(message) {
 app.use(express.static("."));
 app.use(bodyParser.json());
 app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './client.html')));
+app.post('/config', async (req, res) => {
+    try {
+        if (req.body.requestKey !== 'my-client-request') {
+            return res.status(403).json({ error: 'Unauthorized request' });
+        }
+
+        // Simulating an async operation (e.g., database query)
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
+
+        res.json({ WS_URL });
+    } catch (error) {
+        console.error('Server error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 app.listen(HTTP_PORT, ()=> console.log('HTTP server listening at '+HTTP_PORT));

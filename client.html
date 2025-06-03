@@ -47,11 +47,12 @@
 		let urlObject;
 
 		let socket;
-		const serverUrl = 'ws://100.114.25.12:8888'; // Replace with your WebSocket server URL
+		let serverUrl;
 		const reconnectInterval = 5000; // Constant time before attempting reconnect
 
-		connectWebSocket = async () => {
+		function connectWebSocket() {
 		    socket = new WebSocket(serverUrl);
+
 		    socket.onopen = () => {
 		        console.log('Connected to', serverUrl);
 				socket.send("WEB_CLIENT");
@@ -83,9 +84,6 @@
 
 					urlObject = URL.createObjectURL(blobObj);
 					imageFrame.src = urlObject;
-
-					// saveImg.href = imageFrame.src;
-					// saveImg.download = "imagename.jpg";
 				} else if(msg.indexOf("cam_one_temp") != -1) {
 					var deviceName = msg.substring(0, 7);
 
@@ -106,8 +104,27 @@
 		    };
 		}
 
+		async function getSecretKey() {
+	        try {
+	            const response = await fetch('/config', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/json' },
+	                body: JSON.stringify({ requestKey: 'my-client-request' }) 
+	            });
+
+	            const data = await response.json();
+	            serverUrl = data.WS_URL;
+	        	connectWebSocket();
+	        } catch (error) {
+	            console.error('Error:', error);
+	        }
+	    }
+
+	    getSecretKey();
+
+
 		// Start the WebSocket connection
-		connectWebSocket();
+		// connectWebSocket();
 	</script>
 </body>
 </html>
