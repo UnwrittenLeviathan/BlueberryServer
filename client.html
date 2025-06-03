@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" type="text/css" href="/styles.css">
+	<script src="https://d3js.org/d3.v4.js"></script>
+	<title>Blueberry Client</title>
+</head>
+<body>
+	<div class="cards">
+		<div class="card">
+			<img id="ESP32-1">
+			<h2 id="cam-one-temp">Updating Temperature...</h2>
+			<h2 id="time-testing"></h2>
+			<!--
+			<button id="ESP32-1-Right" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-1-Left" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-1-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
+			-->
+		</div>
+		<!-- 
+		<div class="card">
+			<img id="ESP32-2" src="/">
+			<button id="ESP32-2-Right" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-2-Left" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-2-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-2-Down" onclick="sendMessage(this.id)">Down</button>
+		</div>
+		<div class="card">
+			<img id="ESP32-3" src="/">
+			<button id="ESP32-3-Right" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-3-Left" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
+		</div> 
+		<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button>
+		-->
+	</div>
+	<script type="text/javascript">
+		const img_1 = document.getElementById("ESP32-1");
+		// const img_2 = document.getElementById("ESP32-2");
+		// const img_3 = document.getElementById("ESP32-3");
+		var imageFrame;
+		const cam_one_temp_html = document.getElementById("cam-one-temp");
+		let urlObject;
+
+		let socket;
+		const serverUrl = 'ws://100.114.25.12:8888'; // Replace with your WebSocket server URL
+		const reconnectInterval = 5000; // Constant time before attempting reconnect
+
+		connectWebSocket = async () => {
+		    socket = new WebSocket(serverUrl);
+		    socket.onopen = () => {
+		        console.log('Connected to', serverUrl);
+				socket.send("WEB_CLIENT");
+		    };
+
+		    socket.onmessage = async (message) => {
+				const arrayBuffer = message.data;
+
+				if(urlObject){
+					URL.revokeObjectURL(urlObject);
+				}
+
+				var blobObj = new Blob([arrayBuffer]);
+				const msg = await blobObj.text();
+
+				if(msg.length > 64) {
+					const buf = await blobObj.arrayBuffer();
+
+					var uint8 = new Uint8Array(buf.slice(12, 13));
+					var currentCam = uint8[0];
+
+					if(currentCam == 1){
+						imageFrame = img_1;
+					} else if(currentCam == 2) {
+						imageFrame = img_2;
+					} else {
+						imageFrame = img_3;
+					}
+
+					urlObject = URL.createObjectURL(blobObj);
+					imageFrame.src = urlObject;
+
+					// saveImg.href = imageFrame.src;
+					// saveImg.download = "imagename.jpg";
+				} else if(msg.indexOf("cam_one_temp") != -1) {
+					var deviceName = msg.substring(0, 7);
+
+					tempString = msg.replace("cam_one_temp_", "The current temperature is ")+"°F";
+					cam_one_temp_html.innerHTML = tempString;
+					console.log(tempString);
+				}
+			}
+
+		    socket.onerror = (error) => {
+		        console.error("WebSocket error:", error);
+		        socket.close(); // Ensure the connection is closed before reconnecting
+		    };
+
+		    socket.onclose = () => {
+		        console.warn(`WebSocket closed. Reconnecting in ${reconnectInterval / 1000} seconds...`);
+		        setTimeout(connectWebSocket, reconnectInterval); // Constant retry interval
+		    };
+		}
+
+		// Start the WebSocket connection
+		connectWebSocket();
+	</script>
+</body>
+</html>
