@@ -1,18 +1,14 @@
-//TODO:
-/*
-* Add in functionality for recipes: adding food, adding units, adding dates to meals.
-*/
-
 const path = require('path');
 const express = require('express');
 const WebSocket = require('ws');
 const bodyParser = require('body-parser');
-const XMLHttpRequest = require("xhr2");
 const fs = require('fs');
 const cjson = require('compressed-json');
 const { spawn } = require('child_process');
 const dgram = require('dgram');
 const mysql = require('mysql');
+const { PassThrough } = require("stream");
+
 require('dotenv').config();
 
 const WS_PORT = process.env.WS_PORT;
@@ -39,7 +35,6 @@ var minutes = String(now.getMinutes()).padStart(2, '0');
 var seconds = String(now.getSeconds()).padStart(2, '0');
 var milliseconds = String(now.getMilliseconds()).padStart(2, '0');
 var formattedDateTime = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-var lastSecond = String(now.getSeconds()).padStart(2, '0');
 
 let connectedClients = [];
 let webClients = [];
@@ -47,6 +42,10 @@ let bufferedMessage = "";
 let lastTemperature = -100;
 let lastTemperatureString = "";
 let baseFilePath = process.env.SAVE_FILEPATH;
+let stream = new PassThrough(); // Buffered pipeline for efficiency
+let ffmpegProcess;
+let restartTimer;
+let encodingStarted = false; // Flag to track encoding state
 
 db.connect((err) => {
   if (err) throw err;
@@ -81,9 +80,94 @@ udpServer.on('message', (msg, rinfo) => {
     }
     broadcastMessage(msg.toString());
 });
+
 udpServer.bind(9090, () => {
     console.log('UDP server listening on port 9090');
 });
+
+function startEncoding() {
+	now = new Date();
+	year = now.getFullYear();
+	month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+	day = String(now.getDate()).padStart(2, '0');
+	hours = String(now.getHours()).padStart(2, '0');
+	minutes = String(now.getMinutes()).padStart(2, '0');
+	seconds = String(now.getSeconds()).padStart(2, '0');
+	milliseconds = String(now.getMilliseconds()).padStart(2, '0');
+    formattedDateTime = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+    const outputFile = `${baseFilePath}`+`${formattedDateTime}.mp4`;
+
+    console.log(`Starting new FFmpeg encoding session: ${outputFile}`);
+
+    ffmpegProcess = spawn("ffmpeg", [
+    	"-f", "image2pipe",
+        "-framerate", "7",
+        "-i", "pipe:0",
+        "-c:v", "h264_v4l2m2m",
+        "-b:v", "5M",  // Matches ESP32-CAM bitrate
+        "-vf", "format=yuv420p", // Fix deprecated pixel format issue
+        "-progress", "-", // Enables real-time progress output
+    	"-nostats", // Suppresses unnecessary logs
+        outputFile,
+    ]);
+
+    ffmpegProcess.stdout.on("data", (data) => {
+        const output = data.toString();
+        console.log("FFmpeg Progress:", output);
+    });
+
+    ffmpegProcess.on("error", (err) => {
+        if (err.code === "EPIPE") {
+            console.warn("EPIPE detected: Stream closed unexpectedly.");
+            stream.end(); // Close the stream safely
+        }
+    });
+
+    // **Monitor FFmpeg process for unexpected exit**
+    ffmpegProcess.on("exit", (code, signal) => {
+        if(code != 0) {
+            console.log(`FFmpeg exited unexpectedly with code ${code}, signal ${signal}`);
+        }
+    });
+
+    // **Schedule hourly restart**
+    restartTimer = setTimeout(restartEncoding, 60 * 10 * 1000); // 10 minutes
+
+    // Pipe buffered stream into FFmpeg
+    stream.pipe(ffmpegProcess.stdin);
+}
+
+if (!encodingStarted) {
+    console.log("Received first WebSocket frame, starting FFmpeg...");
+    startEncoding();
+    encodingStarted = true;
+}
+
+function isValidJPEG(buffer) {
+    // JPEG files start with FF D8 and end with FF D9
+    return buffer.slice(0, 2).toString('hex') === 'ffd8' &&
+           buffer.slice(-2).toString('hex') === 'ffd9';
+}
+
+// **Function to restart FFmpeg gracefully**
+function restartEncoding() {
+    console.log("Restarting FFmpeg encoding...");
+    
+    clearTimeout(restartTimer); // Cancel previous timer
+    stream.end();
+    ffmpegProcess.stdin.end();
+    
+    stream = new PassThrough(); // Reset buffered stream
+    startEncoding();  // Restart FFmpeg
+}
+
+function broadcastMessage(message) {
+    webClients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
+}
 
 wsServer.on('connection', (ws, req)=>{
 	const clientIP = req.socket.remoteAddress;
@@ -91,32 +175,26 @@ wsServer.on('connection', (ws, req)=>{
 	// connectedClients.push(ws);
 
 	ws.on('message', data => {
-		// console.log(ws.bufferedAmount)
-		//If its a broswer
 		if(data.indexOf("WEB_CLIENT") != -1) {
 			webClients.push(ws);
 			console.log("WEB_CLIENT ADDED");
-
-			db.query(queryTemp, (err, results) => {
-			    if (err) {
-			        console.error('Error fetching data:', err);
-			        return;
-			    }
-			    if (typeof results[0] !== "undefined") {
-				    lastTemperatureString = results[0]['device_name']+"_temp_"+results[0]['temperature']
-			    	lastTemperature = results[0]['temperature']
-				}
-			});
-
-			webClients.forEach((ws, i) => {
-				if(webClients[i] == ws && ws.readyState === ws.OPEN){
-					ws.send(lastTemperatureString);
-				} else{
-					webClients.splice(i, 1);
-					console.log("WEB CLIENT DISCONNECTED")
-				}
-			});
-		}
+		} else if (Buffer.isBuffer(data)) {  // Handle binary data (JPEG)
+            const buffer = Buffer.from(data);
+            if (isValidJPEG(buffer)) {
+                if (ffmpegProcess?.stdin.writable) {
+                    stream.write(buffer); // Write incoming frame to FFmpeg
+                    // console.log("Writing buffer")
+                } else {
+                    console.log("Buffer not writable");
+                    restartEncoding();
+                }
+            } else {
+                console.error('Invalid JPEG data detected!');
+                console.log(data.toString())
+            }
+        } else {  // Handle non-binary data (Text)
+            console.log(`Received WebSocket text message: ${data.toString()}`);
+        }
 
 		webClients.forEach((ws, i) => {
 			if(webClients[i] == ws && ws.readyState === ws.OPEN){
@@ -126,39 +204,6 @@ wsServer.on('connection', (ws, req)=>{
 				console.log("WEB CLIENT DISCONNECTED")
 			}
 		});
-
-		if (Buffer.isBuffer(data)) {  // Handle binary data (JPEG)
-            // const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            now = new Date();
-			year = now.getFullYear();
-			month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-			day = String(now.getDate()).padStart(2, '0');
-			hours = String(now.getHours()).padStart(2, '0');
-			minutes = String(now.getMinutes()).padStart(2, '0');
-			seconds = String(now.getSeconds()).padStart(2, '0');
-			milliseconds = String(now.getMilliseconds()).padStart(2, '0');
-
-			formattedTime = `${minutes}-${seconds}-${milliseconds}`;
-			formattedDate = `${year}-${month}-${day}-${hours}`;
-			
-            const filepath = baseFilePath + formattedDate + "/";
-            
-            if (fs.existsSync(filepath)) {
-				const filename = `image-${formattedTime}.jpg`;
-	            const fullpath = path.join(filepath, filename);
-
-	            const outputStream = fs.createWriteStream(fullpath);
-	            outputStream.write(data);
-	            outputStream.end();
-
-	            // console.log(`Saved image as ${fullpath}`);
-			} else {
-				fs.mkdirSync(filepath, { recursive: true });
-  				console.log('Directory created successfully!');
-			}
-        } else {  // Handle non-binary data (Text)
-            console.log(`Received WebSocket text message: ${data.toString()}`);
-        }
 	});
 
 	ws.on("error", (error) => {
@@ -170,14 +215,6 @@ wsServer.on('connection', (ws, req)=>{
 		console.log(`Client IP: ${clientIP} disconnected`)
 	});
 });
-
-function broadcastMessage(message) {
-    webClients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
-    });
-}
 
 app.use(express.static("."));
 app.use(bodyParser.json());
@@ -192,6 +229,31 @@ app.post('/config', async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
 
         res.json({ WS_URL });
+    } catch (error) {
+        console.error('Server error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+app.post('/temp', async (req, res) => {
+    try {
+        if (req.body.requestKey !== 'my-client-request-temp') {
+            return res.status(403).json({ error: 'Unauthorized request' });
+        }
+
+        // Simulating an async operation (e.g., database query)
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
+
+        db.query(queryTemp, (err, results) => {
+		    if (err) {
+		        console.error('Error fetching data:', err);
+		        return;
+		    }
+		    if (typeof results[0] !== "undefined") {
+			    lastTemperatureString = results[0]['device_name']+"_temp_"+results[0]['temperature'];
+			}
+		});
+
+        res.json({ lastTemperatureString });
     } catch (error) {
         console.error('Server error:', error);
         res.status(500).json({ error: 'Internal server error' });

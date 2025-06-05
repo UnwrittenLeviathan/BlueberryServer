@@ -52,6 +52,7 @@
 
 		function connectWebSocket() {
 		    socket = new WebSocket(serverUrl);
+		    getTemp();
 
 		    socket.onopen = () => {
 		        console.log('Connected to', serverUrl);
@@ -120,9 +121,22 @@
 	        }
 	    }
 
+	    async function getTemp() {
+	        try {
+	            const response = await fetch('/temp', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/json' },
+	                body: JSON.stringify({ requestKey: 'my-client-request-temp' }) 
+	            });
+
+	            const data = await response.json();
+	            tempString = data.lastTemperatureString.replace("cam_one_temp_", "The current temperature is ")+"°F";
+				cam_one_temp_html.innerHTML = tempString;
+	        } catch (error) {
+	            console.error('Error:', error);
+	        }
+	    }
 	    getSecretKey();
-
-
 		// Start the WebSocket connection
 		// connectWebSocket();
 	</script>
