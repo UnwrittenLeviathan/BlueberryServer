@@ -14,6 +14,7 @@ require('dotenv').config();
 const WS_PORT = process.env.WS_PORT;
 const HTTP_PORT = process.env.HTTP_PORT;
 const WS_URL = process.env.WS_URL;
+const timeToRestartVideo = 60/*seconds per minute*/ * 30/*minute per hour*/ * 1000/*milliseconds per second*/;
 
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
@@ -95,9 +96,10 @@ function startEncoding() {
 	seconds = String(now.getSeconds()).padStart(2, '0');
 	milliseconds = String(now.getMilliseconds()).padStart(2, '0');
     formattedDateTime = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+    const baseTempFile = `${baseFilePath}`+`.${formattedDateTime}.mp4`;
     const outputFile = `${baseFilePath}`+`${formattedDateTime}.mp4`;
 
-    console.log(`Starting new FFmpeg encoding session: ${outputFile}`);
+    console.log(`Starting new FFmpeg encoding session: ${baseTempFile}`);
 
     ffmpegProcess = spawn("ffmpeg", [
     	"-f", "image2pipe",
@@ -108,18 +110,37 @@ function startEncoding() {
         "-vf", "format=yuv420p", // Fix deprecated pixel format issue
         "-progress", "-", // Enables real-time progress output
     	"-nostats", // Suppresses unnecessary logs
-        outputFile,
+        baseTempFile,
     ]);
 
     ffmpegProcess.stdout.on("data", (data) => {
         const output = data.toString();
-        console.log("FFmpeg Progress:", output);
+        if(output.indexOf('continue') == -1) {
+            console.log("FFmpeg Progress:", output);
+        }
     });
+
+    ffmpegProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log('Encoding finished. Renaming file...');
+        fs.rename(baseTempFile, outputFile, (err) => {
+          if (err) {
+            console.error('Error renaming file:', err);
+          } else {
+            console.log('File renamed successfully:', outputFile);
+          }
+        });
+      } else {
+        console.error('FFmpeg process exited with code:', code);
+      }
+    });
+
 
     ffmpegProcess.on("error", (err) => {
         if (err.code === "EPIPE") {
             console.warn("EPIPE detected: Stream closed unexpectedly.");
             stream.end(); // Close the stream safely
+            ffmpegProcess.stdin.end();
         }
     });
 
@@ -128,10 +149,12 @@ function startEncoding() {
         if(code != 0) {
             console.log(`FFmpeg exited unexpectedly with code ${code}, signal ${signal}`);
         }
+        stream.end(); // Close the stream safely
+        ffmpegProcess.stdin.end();
     });
 
     // **Schedule hourly restart**
-    restartTimer = setTimeout(restartEncoding, 60 * 10 * 1000); // 10 minutes
+    restartTimer = setTimeout(restartEncoding, timeToRestartVideo); // 10 minutes
 
     // Pipe buffered stream into FFmpeg
     stream.pipe(ffmpegProcess.stdin);
@@ -244,16 +267,33 @@ app.post('/temp', async (req, res) => {
         await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
 
         db.query(queryTemp, (err, results) => {
-		    if (err) {
-		        console.error('Error fetching data:', err);
-		        return;
-		    }
-		    if (typeof results[0] !== "undefined") {
-			    lastTemperatureString = results[0]['device_name']+"_temp_"+results[0]['temperature'];
-			}
-		});
+            if (err) {
+                console.error('Error fetching data:', err);
+                return;
+            }
+            if (typeof results[0] !== "undefined") {
+                lastTemperatureString = results[0]['device_name']+"_temp_"+results[0]['temperature'];
+            }
+        });
 
         res.json({ lastTemperatureString });
+    } catch (error) {
+        console.error('Server error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+app.post('/save-video', async (req, res) => {
+    try {
+        if (req.body.requestKey !== 'my-client-request-save-video') {
+            return res.status(403).json({ error: 'Unauthorized request' });
+        }
+
+        // Simulating an async operation (e.g., database query)
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
+
+        restartEncoding();
+        response = "Successfully saved video";
+        res.json({ response });
     } catch (error) {
         console.error('Server error:', error);
         res.status(500).json({ error: 'Internal server error' });

@@ -12,6 +12,9 @@
 		<div class="card">
 			<img id="ESP32-1">
 			<h2 id="cam-one-temp">Updating Temperature...</h2>
+			<button onclick="saveVideo()">
+				Save Video
+			</button>
 			<h2 id="time-testing"></h2>
 			<!--
 			<button id="ESP32-1-Right" onclick="sendMessage(this.id)">Left</button>
@@ -20,6 +23,7 @@
 			<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
 			-->
 		</div>
+		<!--  -->
 		<!-- 
 		<div class="card">
 			<img id="ESP32-2" src="/">
@@ -132,6 +136,21 @@
 	            const data = await response.json();
 	            tempString = data.lastTemperatureString.replace("cam_one_temp_", "The current temperature is ")+"°F";
 				cam_one_temp_html.innerHTML = tempString;
+	        } catch (error) {
+	            console.error('Error:', error);
+	        }
+	    }
+
+	    async function saveVideo() {
+	        try {
+	            const response = await fetch('/save-video', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/json' },
+	                body: JSON.stringify({ requestKey: 'my-client-request-save-video' }) 
+	            });
+
+	            // const data = await response.json();
+
 	        } catch (error) {
 	            console.error('Error:', error);
 	        }
