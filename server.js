@@ -43,6 +43,7 @@ let bufferedMessage = "";
 let lastTemperature = -100;
 let lastTemperatureString = "";
 let baseFilePath = process.env.SAVE_FILEPATH;
+let secondFilePath = process.env.SAVE_FILEPATH_BACK;
 let stream = new PassThrough(); // Buffered pipeline for efficiency
 let ffmpegProcess;
 let restartTimer;
@@ -71,7 +72,7 @@ udpServer.on('message', (msg, rinfo) => {
     cameraIdentifier = msg.toString().substring(0, 7);
     if(temperature == lastTemperature) {
     	console.log(`Last temp and new temp are same, not logged.`)
-    } else {
+    } else if(temperature !== 'undefined' && cameraIdentifier !== 'undefined') {
     	const sql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
 	    db.query(sql, [cameraIdentifier, temperature], (err, result) => {
 	      if (err) throw err;
@@ -86,6 +87,7 @@ udpServer.bind(9090, () => {
     console.log('UDP server listening on port 9090');
 });
 
+//Add functionality for more cameras, add var to pass into function.
 function startEncoding() {
 	now = new Date();
 	year = now.getFullYear();
@@ -96,11 +98,22 @@ function startEncoding() {
 	seconds = String(now.getSeconds()).padStart(2, '0');
 	milliseconds = String(now.getMilliseconds()).padStart(2, '0');
     formattedDateTime = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-    const baseTempFile = `${baseFilePath}`+`.${formattedDateTime}.mp4`;
-    const outputFile = `${baseFilePath}`+`${formattedDateTime}.mp4`;
+    var baseTempFile;
+    var outputFile;
+
+    try {
+        fs.accessSync(baseFilePath, fs.constants.W_OK);
+        console.log("Directory is writable.");
+        baseTempFile = `${baseFilePath}`+`.${formattedDateTime}.mp4`;
+        outputFile = `${baseFilePath}`+`${formattedDateTime}.mp4`;
+    } catch (err) {
+        console.log("Directory is NOT writable.");
+        baseTempFile = `${secondFilePath}`+`.${formattedDateTime}.mp4`;
+        outputFile = `${secondFilePath}`+`${formattedDateTime}.mp4`;
+    }
+
 
     console.log(`Starting new FFmpeg encoding session: ${baseTempFile}`);
-
     ffmpegProcess = spawn("ffmpeg", [
     	"-f", "image2pipe",
         "-framerate", "7",
@@ -115,9 +128,9 @@ function startEncoding() {
 
     ffmpegProcess.stdout.on("data", (data) => {
         const output = data.toString();
-        if(output.indexOf('continue') == -1) {
+        // if(output.indexOf('continue') == -1) {
             console.log("FFmpeg Progress:", output);
-        }
+        // }
     });
 
     ffmpegProcess.on('close', (code) => {
@@ -139,9 +152,9 @@ function startEncoding() {
     ffmpegProcess.on("error", (err) => {
         if (err.code === "EPIPE") {
             console.warn("EPIPE detected: Stream closed unexpectedly.");
-            stream.end(); // Close the stream safely
-            ffmpegProcess.stdin.end();
         }
+        stream.end(); // Close the stream safely
+        ffmpegProcess.stdin.end();
     });
 
     // **Monitor FFmpeg process for unexpected exit**
@@ -155,15 +168,8 @@ function startEncoding() {
 
     // **Schedule hourly restart**
     restartTimer = setTimeout(restartEncoding, timeToRestartVideo); // 10 minutes
-
-    // Pipe buffered stream into FFmpeg
+    
     stream.pipe(ffmpegProcess.stdin);
-}
-
-if (!encodingStarted) {
-    console.log("Received first WebSocket frame, starting FFmpeg...");
-    startEncoding();
-    encodingStarted = true;
 }
 
 function isValidJPEG(buffer) {
@@ -171,6 +177,32 @@ function isValidJPEG(buffer) {
     return buffer.slice(0, 2).toString('hex') === 'ffd8' &&
            buffer.slice(-2).toString('hex') === 'ffd9';
 }
+
+function repairJPEG(buffer) {
+    const SOI = Buffer.from([0xFF, 0xD8]); // Start of Image
+    const EOI = Buffer.from([0xFF, 0xD9]); // End of Image
+
+    // Ensure buffer is large enough to contain valid JPEG markers
+    if (buffer.length < 4) {
+        console.log("Buffer too small to be a valid JPEG.");
+        return null;
+    }
+
+    // Fix missing SOI marker
+    if (buffer.slice(0, 2).toString('hex') !== 'ffd8') {
+        console.log("Missing SOI marker, repairing...");
+        buffer = Buffer.concat([SOI, buffer]);
+    }
+
+    // Fix missing EOI marker
+    if (buffer.slice(-2).toString('hex') !== 'ffd9') {
+        console.log("Missing EOI marker, repairing...");
+        buffer = Buffer.concat([buffer, EOI]);
+    }
+
+    return buffer;
+}
+
 
 // **Function to restart FFmpeg gracefully**
 function restartEncoding() {
@@ -202,6 +234,11 @@ wsServer.on('connection', (ws, req)=>{
 			webClients.push(ws);
 			console.log("WEB_CLIENT ADDED");
 		} else if (Buffer.isBuffer(data)) {  // Handle binary data (JPEG)
+            if (!encodingStarted) {
+                console.log("Received first WebSocket frame, starting FFmpeg...");
+                startEncoding();
+                encodingStarted = true;
+            }
             const buffer = Buffer.from(data);
             if (isValidJPEG(buffer)) {
                 if (ffmpegProcess?.stdin.writable) {
@@ -213,7 +250,13 @@ wsServer.on('connection', (ws, req)=>{
                 }
             } else {
                 console.error('Invalid JPEG data detected!');
-                console.log(data.toString())
+                if (ffmpegProcess?.stdin.writable) {
+                    stream.write(repairJPEG(buffer)); // Write incoming frame to FFmpeg
+                    // console.log("Writing buffer")
+                } else {
+                    console.log("Buffer not writable");
+                    restartEncoding();
+                }
             }
         } else {  // Handle non-binary data (Text)
             console.log(`Received WebSocket text message: ${data.toString()}`);

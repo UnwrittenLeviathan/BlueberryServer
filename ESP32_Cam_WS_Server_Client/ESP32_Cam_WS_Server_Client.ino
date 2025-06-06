@@ -37,6 +37,15 @@ const char* websocket_server_host = "192.168.1.5";
 const uint16_t websocket_server_port = 8888;
 const int udp_port = 9090;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+uint8_t temprature_sens_read();
+#ifdef __cplusplus
+}
+#endif
+uint8_t temprature_sens_read();
+
 const int oneWireBus = 2;
 OneWire oneWire(oneWireBus);
 DallasTemperature sensors(&oneWire);
@@ -139,6 +148,10 @@ void udpSendMessage() {
   udp.beginPacket(websocket_server_host, udp_port);
   udp.write((const uint8_t*)udp_message, strlen(udp_message));
   udp.endPacket();
+
+  Serial.print("ESP32-CAM Chip Temperature: ");
+  Serial.print((temprature_sens_read() - 32) / 1.8); // Convert Fahrenheit to Celsius
+  Serial.println(" °C");
 }
 
 void webSocketConnect() {
