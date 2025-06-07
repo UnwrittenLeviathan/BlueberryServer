@@ -17,6 +17,7 @@
 #include "esp_system.h"
 #include <ArduinoOTA.h>
 #include "secrets.h"
+#include "esp_heap_caps.h"
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 
@@ -180,6 +181,13 @@ void setup() {
   // Start OTA service
   ArduinoOTA.begin();
   Serial.println("OTA Ready!");
+
+  // Print simple free heap info
+  Serial.print("Free heap: ");
+  Serial.println(ESP.getFreeHeap());
+  
+  // Print detailed heap information for 8-bit accessible memory:
+  heap_caps_print_heap_info(MALLOC_CAP_8BIT);
 
   client.onEvent(onEventsCallback);
   client.onMessage(onMessageCallback);
@@ -391,5 +399,7 @@ void loop() {
   if(currentMillis - previousMillis >= timerInterval) {
     previousMillis = millis();
     udpSendMessage();
+    Serial.println("\n--- Heap Info ---");
+    heap_caps_print_heap_info(MALLOC_CAP_8BIT);
   }
 }
