@@ -233,6 +233,14 @@ void udpSendMessage() {
   udp.endPacket();
 }
 
+// --- JPEG validation function ---
+// Checks the JPEG start (0xFF, 0xD8) and end (0xFF, 0xD9) markers.
+bool isValidJPEG(const uint8_t* buf, size_t len) {
+  if (len < 4) return false; // Too small to be a valid JPEG
+  return (buf[0] == 0xFF && buf[1] == 0xD8 &&
+          buf[len - 2] == 0xFF && buf[len - 1] == 0xD9);
+}
+
 void webSocketConnect() {
   while(!client.connect(websocket_server_host, websocket_server_port, "/")){
     Serial.print(".");
@@ -275,12 +283,18 @@ void websocketSendPhoto() {
     return;
   }
 
-  fb->buf[12] = 0x01; //Cam 1
+  // Validate JPEG data before sending
+  if (isValidJPEG(fb->buf, fb->len)) {
+    // Serial.printf("Valid JPEG captured (%d bytes)\n", fb->len);
+    fb->buf[12] = 0x01; //Cam 1
+    const char* frameBuff = (const char*) fb->buf;
+    size_t frameLength = fb->len;
 
-  const char* frameBuff = (const char*) fb->buf;
-  size_t frameLength = fb->len;
+    client.sendBinary(frameBuff , frameLength);
+  } else {
+    Serial.println("Invalid JPEG data; frame skipped");
+  }
 
-  client.sendBinary(frameBuff , frameLength);
   esp_camera_fb_return(fb);
   // delay(42);
 }

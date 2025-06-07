@@ -14,7 +14,8 @@ require('dotenv').config();
 const WS_PORT = process.env.WS_PORT;
 const HTTP_PORT = process.env.HTTP_PORT;
 const WS_URL = process.env.WS_URL;
-const timeToRestartVideo = 60/*seconds per minute*/ * 30/*minute per hour*/ * 1000/*milliseconds per second*/;
+const timeToRestartVideo = 60/*seconds per minute*/ * 60/*minute per hour*/ * 1000/*milliseconds per second*/;
+const encodingRestartPause = 100; //100 ms time before restarting ffmpeg encoding stream for 
 
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
@@ -177,7 +178,7 @@ function restartEncoding() {
     ffmpegProcess.stdin.end();
     
     stream = new PassThrough(); // Reset buffered stream
-    startEncoding();  // Restart FFmpeg
+    setTimeout(startEncoding, encodingRestartPause);  // Restart FFmpeg
 }
 
 function broadcastMessage(message) {
@@ -240,7 +241,7 @@ wsServer.on('connection', (ws, req)=>{
                     stream.write(buffer); // Write incoming frame to FFmpeg
                     // console.log("Writing buffer")
                 } else {
-                    console.log("Buffer not writable");
+                    console.error("Buffer not writable");
                     restartEncoding();
                 }
             } else {
@@ -249,7 +250,7 @@ wsServer.on('connection', (ws, req)=>{
                     stream.write(repairJPEG(buffer)); // Write incoming frame to FFmpeg
                     // console.log("Writing buffer")
                 } else {
-                    console.log("Buffer not writable");
+                    console.error("Buffer not writable");
                     restartEncoding();
                 }
             }
