@@ -15,6 +15,7 @@
 #include "esp_http_server.h"
 #include <ESP32Servo.h>
 #include "esp_system.h"
+#include <ArduinoOTA.h>
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 
@@ -29,14 +30,15 @@ Servo servo2;
 int servo1Pos = 90;
 int servo2Pos = 90;
 
-int cameraNum = 1;
 String temp;
+const char* cameraNum = TO_STRING(HOST_IDENT);
+const char* OTA_HOSTNAME = "ESP32-CAM-".concat(cameraNum);
 
-const char* ssid = "Epson H-1251";
-const char* password = "merEGS2018";
-const char* websocket_server_host = "192.168.1.5";
-const uint16_t websocket_server_port = 8888;
-const int udp_port = 9090;
+const char* ssid = WIFI_SSID;
+const char* password = OTA_PASSWORD;
+const char* websocket_server_host = WEBSOCK_HOST;
+const uint16_t websocket_server_port = WEBSOCK_PORT;
+const int udp_port = UDP_PORT;
 
 #ifdef __cplusplus
 extern "C" {
@@ -146,6 +148,37 @@ void setup() {
   }
   Serial.println("");
   Serial.println("WiFi connected");
+
+  // OTA setup
+  ArduinoOTA.setHostname(OTA_HOSTNAME);
+  
+  // Set OTA password for secure firmware updates
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  // Alternatively, if you prefer to use a hash for added security:
+  // ArduinoOTA.setPasswordHash("sha256_hashed_password_here");
+
+  // Optional callbacks to report OTA update progress and error messages
+  ArduinoOTA.onStart([]() {
+    Serial.println("Start updating firmware via OTA...");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nOTA update complete!");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress * 100 / total));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Authentication Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connection Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Reception Failed");
+    else if (error == OTA_END_ERROR) Serial.println("Finalization Failed");
+  });
+
+  // Start OTA service
+  ArduinoOTA.begin();
+  Serial.println("OTA Ready!");
 
   client.onEvent(onEventsCallback);
   client.onMessage(onMessageCallback);
@@ -286,7 +319,7 @@ void websocketSendPhoto() {
   // Validate JPEG data before sending
   if (isValidJPEG(fb->buf, fb->len)) {
     // Serial.printf("Valid JPEG captured (%d bytes)\n", fb->len);
-    fb->buf[12] = 0x01; //Cam 1
+    fb->buf[12] = HOST_IDENT; //Cam 1
     const char* frameBuff = (const char*) fb->buf;
     size_t frameLength = fb->len;
 
