@@ -14,6 +14,7 @@
 #include "soc/rtc_cntl_reg.h"  //disable brownout problems
 #include "esp_http_server.h"
 #include <ESP32Servo.h>
+#include "esp_system.h"
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 
@@ -64,6 +65,16 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
   Serial.println();
+  xTaskCreatePinnedToCore(
+    monitorTask,    // Function with the monitoring logic
+    "MonitorTask",  // Name for the task
+    2048,           // Stack size in bytes for monitorTask
+    NULL,           // No parameters needed right now
+    1,              // Lower priority than captureTask
+    NULL,           // Task handle
+    1               // Run on core 1
+  );
+
 
   sensors.begin();
 
@@ -98,6 +109,15 @@ void setup() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 10000000;
   config.frame_size = FRAMESIZE_HD;
+  /*
+    FRAMESIZE_UXGA (1600 x 1200)
+    FRAMESIZE_QVGA (320 x 240)
+    FRAMESIZE_CIF (352 x 288)
+    FRAMESIZE_VGA (640 x 480)
+    FRAMESIZE_SVGA (800 x 600)
+    FRAMESIZE_XGA (1024 x 768)
+    FRAMESIZE_SXGA (1280 x 1024)
+  */
   config.pixel_format = PIXFORMAT_JPEG;
   config.grab_mode = CAMERA_GRAB_LATEST;
   config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -136,6 +156,58 @@ void setup() {
   udpSendMessage();
 }
 
+void captureTask(void * parameter) {
+  // Assign a high priority to this task (e.g., 3; adjust as needed)
+  const int capturePriority = uxTaskPriorityGet(NULL);
+  Serial.print("[CaptureTask] Starting with priority: ");
+  Serial.println(capturePriority);
+
+  // Frame counter for diagnostics
+  uint32_t frameCount = 0;
+
+  while (true) {
+    // Simulate capturing a frame (replace with your JPEG capture)
+    // For instance, here you might read data from your camera, embed timestamp, etc.
+    frameCount++;
+    
+    // Log the frame capture count occasionally (or send it to another monitoring system)
+    if (frameCount % 10 == 0) {
+      Serial.print("[CaptureTask] Frames captured so far: ");
+      Serial.println(frameCount);
+    }
+
+    // Simulate frame processing delay. Replace with your actual capture logic.
+    // Adjust the delay to mimic your desired FPS (7 fps ~ 140 ms per frame, etc.)
+    vTaskDelay(pdMS_TO_TICKS(140));
+  }
+}
+
+// This task periodically monitors the system's free heap, uptime, and other details.
+// It can help reveal any gradual memory leaks or irregular task scheduling.
+void monitorTask(void * parameter) {
+  while (true) {
+    // Get the free heap memory
+    uint32_t freeHeap = ESP.getFreeHeap();
+
+    // Get the running time in milliseconds
+    uint32_t uptime = millis();
+
+    // Optionally, adjust or log any task-specific priorities
+    // Here, we just log the priority of this monitor task for diagnostics.
+    UBaseType_t currentPriority = uxTaskPriorityGet(NULL);
+
+    Serial.print("[MonitorTask] Uptime (ms): ");
+    Serial.print(uptime);
+    Serial.print(" | Free Heap: ");
+    Serial.print(freeHeap);
+    Serial.print(" | Monitor Task Priority: ");
+    Serial.println(currentPriority);
+
+    // Delay for a period (e.g., every 5 seconds) before checking again.
+    vTaskDelay(pdMS_TO_TICKS(5000));
+  }
+}
+
 void udpSendMessage() {
   sensors.setWaitForConversion(false);  // makes it async
   sensors.requestTemperatures();
@@ -149,9 +221,16 @@ void udpSendMessage() {
   udp.write((const uint8_t*)udp_message, strlen(udp_message));
   udp.endPacket();
 
+  int esp32Temp = (temprature_sens_read() - 32) / 1.8;
   Serial.print("ESP32-CAM Chip Temperature: ");
-  Serial.print((temprature_sens_read() - 32) / 1.8); // Convert Fahrenheit to Celsius
+  Serial.print(esp32Temp); // Convert Fahrenheit to Celsius
   Serial.println(" °C");
+  message_udp = "cam_one_temp_int_" + String(esp32Temp);
+  const char* udp_message_2 = message_udp.c_str();
+
+  udp.beginPacket(websocket_server_host, udp_port);
+  udp.write((const uint8_t*)udp_message_2, strlen(udp_message_2));
+  udp.endPacket();
 }
 
 void webSocketConnect() {
