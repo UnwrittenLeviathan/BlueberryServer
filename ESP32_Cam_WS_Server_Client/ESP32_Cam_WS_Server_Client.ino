@@ -16,6 +16,7 @@
 #include <ESP32Servo.h>
 #include "esp_system.h"
 #include <ArduinoOTA.h>
+#include "secrets.h"
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 
@@ -32,7 +33,7 @@ int servo2Pos = 90;
 
 String temp;
 const char* cameraNum = TO_STRING(HOST_IDENT);
-const char* OTA_HOSTNAME = "ESP32-CAM-".concat(cameraNum);
+const char* OTA_HOSTNAME = (String("ESP32-CAM-") + String(cameraNum)).c_str();
 
 const char* ssid = WIFI_SSID;
 const char* password = OTA_PASSWORD;
@@ -384,6 +385,7 @@ void onMessageCallback(WebsocketsMessage message) {
 }
 
 void loop() {
+  ArduinoOTA.handle();
   unsigned long currentMillis = millis();
   websocketSendPhoto();
   if(currentMillis - previousMillis >= timerInterval) {
