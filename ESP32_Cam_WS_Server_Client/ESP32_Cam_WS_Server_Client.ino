@@ -15,7 +15,7 @@
 #include "esp_http_server.h"
 #include <ESP32Servo.h>
 #include "esp_system.h"
-#include <ArduinoOTA.h>
+#include <Arduino_ESP32_OTA.h>
 #include "secrets.h"
 #include "esp_heap_caps.h"
 
@@ -62,6 +62,7 @@ WebsocketsClient client;
 bool isWebSocketConnected;
 
 WiFiUDP udp;
+Arduino_ESP32_OTA otaESP32;
 
 const int timerInterval = 30000;    // time between each HTTP POST image
 unsigned long previousMillis = 0;   // last time image was sent
@@ -153,37 +154,8 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected");
 
-  // OTA setup
-  ArduinoOTA.setHostname(OTA_HOSTNAME);
-  
-  // Set OTA password for secure firmware updates
-  ArduinoOTA.setPassword(OTA_PASSWORD);
-  // Alternatively, if you prefer to use a hash for added security:
-  // ArduinoOTA.setPasswordHash("sha256_hashed_password_here");
-
-  // Optional callbacks to report OTA update progress and error messages
-  ArduinoOTA.onStart([]() {
-    Serial.println("Start updating firmware via OTA...");
-    otaInProgress = true;  // Pause WebSockets
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nOTA update complete!");
-    otaInProgress = false;
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress * 100 / total));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("OTA Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Authentication Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connection Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Reception Failed");
-    else if (error == OTA_END_ERROR) Serial.println("Finalization Failed");
-  });
-
   // Start OTA service
-  ArduinoOTA.begin();
+  otaESP32.begin();
   Serial.println("OTA Ready!");
 
   // Print simple free heap info
@@ -397,16 +369,14 @@ void onMessageCallback(WebsocketsMessage message) {
 }
 
 void loop() {
-  ArduinoOTA.handle();
+  otaESP32.handle();
   unsigned long currentMillis = millis();
 
-  if(!otaInProgress) {
-    websocketSendPhoto();
-    if(currentMillis - previousMillis >= timerInterval) {
-      previousMillis = millis();
-      udpSendMessage();
-      Serial.println("\n--- Heap Info ---");
-      heap_caps_print_heap_info(MALLOC_CAP_8BIT);
-    }
+  websocketSendPhoto();
+  if(currentMillis - previousMillis >= timerInterval) {
+    previousMillis = millis();
+    udpSendMessage();
+    Serial.println("\n--- Heap Info ---");
+    heap_caps_print_heap_info(MALLOC_CAP_8BIT);
   }
 }
