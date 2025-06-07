@@ -67,20 +67,25 @@ db.query(queryTemp, (err, results) => {
 });
 
 udpServer.on('message', (msg, rinfo) => {
+    //Check if camera identifier is internal temp
     // console.log(`Received UDP uint8_t message: ${msg.toString()} from ${rinfo.address}:${rinfo.port}`);
-    temperature = msg.toString().substring(msg.toString().lastIndexOf("_")+1);
-    cameraIdentifier = msg.toString().substring(0, 7);
-    if(temperature == lastTemperature) {
-    	console.log(`Last temp and new temp are same, not logged.`)
-    } else if(temperature !== 'undefined' && cameraIdentifier !== 'undefined') {
-    	const sql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
-	    db.query(sql, [cameraIdentifier, temperature], (err, result) => {
-	      if (err) throw err;
-	      console.log(`Temperature of ${temperature} logged in database.`);
-	    });
-    	lastTemperature = temperature;
+    if(msg.toString().indexOf("int") != -1) {
+        console.log(msg.toString());
+    } else {
+        temperature = msg.toString().substring(msg.toString().lastIndexOf("_")+1);
+        cameraIdentifier = msg.toString().substring(0, 7);
+        if(temperature == lastTemperature) {
+        	console.log(`Last temp and new temp are same, not logged.`)
+        } else if(temperature !== 'undefined' && cameraIdentifier !== 'undefined') {
+        	const sql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
+    	    db.query(sql, [cameraIdentifier, temperature], (err, result) => {
+    	      if (err) throw err;
+    	      console.log(`Temperature of ${temperature} logged in database.`);
+    	    });
+        	lastTemperature = temperature;
+        }
+        broadcastMessage(msg.toString());
     }
-    broadcastMessage(msg.toString());
 });
 
 udpServer.bind(9090, () => {
@@ -107,7 +112,7 @@ function startEncoding() {
         baseTempFile = `${baseFilePath}`+`.${formattedDateTime}.mp4`;
         outputFile = `${baseFilePath}`+`${formattedDateTime}.mp4`;
     } catch (err) {
-        console.log("Directory is NOT writable.");
+        console.log("Directory is NOT writable, using backup.");
         baseTempFile = `${secondFilePath}`+`.${formattedDateTime}.mp4`;
         outputFile = `${secondFilePath}`+`${formattedDateTime}.mp4`;
     }
@@ -128,15 +133,15 @@ function startEncoding() {
 
     ffmpegProcess.stdout.on("data", (data) => {
         const output = data.toString();
-        // if(output.indexOf('continue') == -1) {
+        if(output.indexOf('continue') == -1) {
             console.log("FFmpeg Progress:", output);
-        // }
+        }
     });
 
     ffmpegProcess.on('close', (code) => {
       if (code === 0) {
         console.log('Encoding finished. Renaming file...');
-        fs.rename(baseTempFile, outputFile, (err) => {
+        fs.renameSync(baseTempFile, outputFile, (err) => {
           if (err) {
             console.error('Error renaming file:', err);
           } else {
@@ -157,19 +162,30 @@ function startEncoding() {
         ffmpegProcess.stdin.end();
     });
 
-    // **Monitor FFmpeg process for unexpected exit**
-    ffmpegProcess.on("exit", (code, signal) => {
-        if(code != 0) {
-            console.log(`FFmpeg exited unexpectedly with code ${code}, signal ${signal}`);
-        }
-        stream.end(); // Close the stream safely
-        ffmpegProcess.stdin.end();
-    });
-
     // **Schedule hourly restart**
     restartTimer = setTimeout(restartEncoding, timeToRestartVideo); // 10 minutes
     
     stream.pipe(ffmpegProcess.stdin);
+}
+
+// **Function to restart FFmpeg gracefully**
+function restartEncoding() {
+    console.log("Restarting FFmpeg encoding...");
+    
+    clearTimeout(restartTimer); // Cancel previous timer
+    stream.end();
+    ffmpegProcess.stdin.end();
+    
+    stream = new PassThrough(); // Reset buffered stream
+    startEncoding();  // Restart FFmpeg
+}
+
+function broadcastMessage(message) {
+    webClients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
 }
 
 function isValidJPEG(buffer) {
@@ -201,27 +217,6 @@ function repairJPEG(buffer) {
     }
 
     return buffer;
-}
-
-
-// **Function to restart FFmpeg gracefully**
-function restartEncoding() {
-    console.log("Restarting FFmpeg encoding...");
-    
-    clearTimeout(restartTimer); // Cancel previous timer
-    stream.end();
-    ffmpegProcess.stdin.end();
-    
-    stream = new PassThrough(); // Reset buffered stream
-    startEncoding();  // Restart FFmpeg
-}
-
-function broadcastMessage(message) {
-    webClients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
-    });
 }
 
 wsServer.on('connection', (ws, req)=>{
