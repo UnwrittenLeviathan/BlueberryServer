@@ -42,6 +42,8 @@ const char* websocket_server_host = WEBSOCK_HOST;
 const uint16_t websocket_server_port = WEBSOCK_PORT;
 const int udp_port = UDP_PORT;
 
+bool otaInProgress = false;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -162,9 +164,11 @@ void setup() {
   // Optional callbacks to report OTA update progress and error messages
   ArduinoOTA.onStart([]() {
     Serial.println("Start updating firmware via OTA...");
+    otaInProgress = true;  // Pause WebSockets
   });
   ArduinoOTA.onEnd([]() {
     Serial.println("\nOTA update complete!");
+    otaInProgress = false;
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     Serial.printf("Progress: %u%%\r", (progress * 100 / total));
@@ -395,11 +399,14 @@ void onMessageCallback(WebsocketsMessage message) {
 void loop() {
   ArduinoOTA.handle();
   unsigned long currentMillis = millis();
-  websocketSendPhoto();
-  if(currentMillis - previousMillis >= timerInterval) {
-    previousMillis = millis();
-    udpSendMessage();
-    Serial.println("\n--- Heap Info ---");
-    heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+
+  if(!otaInProgress) {
+    websocketSendPhoto();
+    if(currentMillis - previousMillis >= timerInterval) {
+      previousMillis = millis();
+      udpSendMessage();
+      Serial.println("\n--- Heap Info ---");
+      heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+    }
   }
 }
