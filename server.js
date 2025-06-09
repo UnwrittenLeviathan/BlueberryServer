@@ -49,6 +49,8 @@ let stream = new PassThrough(); // Buffered pipeline for efficiency
 let ffmpegProcess;
 let restartTimer;
 let encodingStarted = false; // Flag to track encoding state
+let encodingRestarting = false;
+let jpegBufferQueue = [];
 
 db.connect((err) => {
   if (err) throw err;
@@ -174,10 +176,23 @@ function startEncoding() {
     restartTimer = setTimeout(restartEncoding, timeToRestartVideo); // 10 minutes
     
     stream.pipe(ffmpegProcess.stdin);
+    encodingRestarting = false;
+    
+    // Flush buffered JPEGs after restart
+    if (jpegBufferQueue.length > 0) {
+      console.log(`Flushing ${jpegBufferQueue.length} buffered frames...`);
+      jpegBufferQueue.forEach(frame => {
+        if (ffmpegProcess?.stdin.writable) {
+          stream.write(frame);
+        }
+      });
+      jpegBufferQueue = [];
+    }
 }
 
 // **Function to restart FFmpeg gracefully**
 function restartEncoding() {
+    encodingRestarting = true;
     console.log("Restarting FFmpeg encoding...");
     
     clearTimeout(restartTimer); // Cancel previous timer
@@ -243,24 +258,38 @@ wsServer.on('connection', (ws, req)=>{
                 encodingStarted = true;
             }
             const buffer = Buffer.from(data);
-            if (isValidJPEG(buffer)) {
-                if (ffmpegProcess?.stdin.writable) {
-                    stream.write(buffer); // Write incoming frame to FFmpeg
-                    // console.log("Writing buffer")
-                } else {
-                    console.error("Buffer not writable");
-                    restartEncoding();
-                }
-            } else {
-                console.error('Invalid JPEG data detected!');
-                if (ffmpegProcess?.stdin.writable) {
-                    stream.write(repairJPEG(buffer)); // Write incoming frame to FFmpeg
-                    // console.log("Writing buffer")
-                } else {
-                    console.error("Buffer not writable");
-                    restartEncoding();
-                }
-            }
+            const validJPEG = isValidJPEG(buffer) ? buffer : repairJPEG(buffer);
+
+
+            if (encodingRestarting) {
+                jpegBufferQueue.push(validJPEG);
+                console.log("Encoding restarting — buffering frame.");
+             } else if (ffmpegProcess?.stdin.writable) {
+                stream.write(validJPEG);
+             } else {
+                console.error("Stream not writable — restarting encoding.");
+                restartEncoding();
+             }
+
+
+            // if (isValidJPEG(buffer)) {
+            //     if (ffmpegProcess?.stdin.writable) {
+            //         stream.write(buffer); // Write incoming frame to FFmpeg
+            //         // console.log("Writing buffer")
+            //     } else {
+            //         console.error("Buffer not writable");
+            //         restartEncoding();
+            //     }
+            // } else {
+            //     console.error('Invalid JPEG data detected!');
+            //     if (ffmpegProcess?.stdin.writable) {
+            //         stream.write(repairJPEG(buffer)); // Write incoming frame to FFmpeg
+            //         // console.log("Writing buffer")
+            //     } else {
+            //         console.error("Buffer not writable");
+            //         restartEncoding();
+            //     }
+            // }
         } else {  // Handle non-binary data (Text)
             console.log(`Received WebSocket text message: ${data.toString()}`);
         }
