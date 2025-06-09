@@ -69,24 +69,18 @@ db.query(queryTemp, (err, results) => {
 });
 
 udpServer.on('message', (msg, rinfo) => {
-    //Check if camera identifier is internal temp
-    // console.log(`Received UDP uint8_t message: ${msg.toString()} from ${rinfo.address}:${rinfo.port}`);
-    if(msg.toString().indexOf("int") != -1) {
-        temperature = msg.toString().substring(msg.toString().lastIndexOf("_")+1);
-        cameraIdentifier = msg.toString().substring(0, 10);
-        if(temperatureBuffer[cameraIdentifier] !== undefined && temperature != temperatureBuffer[cameraIdentifier]) {
-            console.log(msg.toString());
-        }
-        temperatureBuffer[cameraIdentifier] = temperature;
-    } else {
+    // console.log(msg.toString());
+    if(msg.toString().indexOf("int") == -1) {
         temperature = msg.toString().substring(msg.toString().lastIndexOf("_")+1);
         cameraIdentifier = msg.toString().substring(0, 7);
-        //Update for better error handling. Also adjust client HTML for change.
+        temperatureBuffer[cameraIdentifier] = temperature;
+        // console.log
+        //Update for better error handling.
         if(temperatureBuffer[cameraIdentifier] !== 'undefined' && temperature != temperatureBuffer[cameraIdentifier] && temperature !== 'undefined' && cameraIdentifier !== 'undefined') {
         	const sql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
     	    db.query(sql, [cameraIdentifier, temperature], (err, result) => {
     	      if (err) throw err;
-    	      console.log(`Temperature of ${temperature} logged in database.`);
+    	      console.log(`Temperature ${temperatureBuffer} logged in database.`);
     	    });
         	temperatureBuffer[cameraIdentifier] = temperature;
         }
@@ -351,6 +345,7 @@ app.post('/temp', async (req, res) => {
             }
             if (typeof results[0] !== "undefined") {
                 temperatureBuffer[results[0]['device_name']] = results[0]['temperature'];
+                console.log(temperatureBuffer);
             }
         });
 
