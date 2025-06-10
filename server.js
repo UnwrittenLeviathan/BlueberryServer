@@ -447,26 +447,26 @@ function generateFileNames(identifier) {
 
 function startEncoding(identifier, stream) {
   const { baseTempFile, outputFile } = generateFileNames(identifier);
-
   console.log(`${identifier}: Starting new FFmpeg encoding session: ${baseTempFile}`);
 
-  // Spawn the FFmpeg process with the desired arguments.
   const ffmpegProcess = spawn("ffmpeg", [
     "-f", "image2pipe",
     "-framerate", "7",
     "-i", "pipe:0",
     "-c:v", "h264_v4l2m2m",
-    "-b:v", "5M",                 // Matches ESP32-CAM bitrate
-    "-vf", "format=yuv420p",       // Fix deprecated pixel format issue
-    "-progress", "-",             // Enables real-time progress output
-    "-nostats",                   // Suppresses unnecessary logs
+    "-b:v", "5M",
+    "-vf", "format=yuv420p",
+    "-progress", "-",
+    "-nostats",
     baseTempFile,
   ]);
 
-  // Save process and restart timer so we can manage this encoding session later.
-  activeEncodings[identifier] = { ffmpegProcess, restartTimer: null };
+  activeEncodings[identifier] = {
+    ffmpegProcess,
+    restartTimer: null,
+    stream
+  };
 
-  // Handle FFmpeg's stdout data.
   ffmpegProcess.stdout.on("data", (data) => {
     const output = data.toString();
     if (!output.includes('continue')) {
@@ -474,7 +474,6 @@ function startEncoding(identifier, stream) {
     }
   });
 
-  // When the process closes, attempt to rename the temporary file.
   ffmpegProcess.on('close', (code) => {
     if (code === 0) {
       console.log(`${identifier}: Encoding finished. Renaming file...`);
@@ -487,33 +486,24 @@ function startEncoding(identifier, stream) {
     } else {
       console.error(`${identifier}: FFmpeg process exited with code:`, code);
     }
-    // Clean up timer and remove the session from activeEncodings.
-    if (activeEncodings[identifier]) {
-      clearTimeout(activeEncodings[identifier].restartTimer);
-      delete activeEncodings[identifier];
-    }
+    clearTimeout(activeEncodings[identifier]?.restartTimer);
+    delete activeEncodings[identifier];
   });
 
-  // Handle process errors such as closed input streams.
   ffmpegProcess.on("error", (err) => {
     if (err.code === "EPIPE") {
-      console.warn(`${identifier}: EPIPE detected: Stream closed unexpectedly.`);
+      console.warn(`${identifier}: EPIPE detected.`);
     }
-    if (stream && !stream.destroyed) {
-      stream.end(); // Close the input stream safely
-    }
-    if (ffmpegProcess.stdin) {
-      ffmpegProcess.stdin.end();
-    }
+    if (stream && !stream.destroyed) stream.end();
+    if (ffmpegProcess.stdin) ffmpegProcess.stdin.end();
   });
 
-  // Schedule a restart for this encoding process.
   const restartTimer = setTimeout(() => {
-    restartEncoding(identifier, stream);
+    restartEncoding(identifier);
   }, timeToRestartVideo);
+
   activeEncodings[identifier].restartTimer = restartTimer;
 
-  // Pipe the input stream into FFmpeg's stdin.
   if (stream) {
     stream.pipe(ffmpegProcess.stdin);
   } else {
@@ -525,28 +515,18 @@ function startEncoding(identifier, stream) {
  * @param {string} identifier - Unique session identifier.
  * @param {stream.Readable} stream - Input stream for the new encoding process.
 
-function restartEncoding(identifier, stream) {
+function restartEncoding(identifier) {
   console.log(`${identifier}: Restarting encoding session...`);
-  if (activeEncodings[identifier]) {
-    const { ffmpegProcess, restartTimer } = activeEncodings[identifier];
+  const session = activeEncodings[identifier];
+  if (session) {
+    const { ffmpegProcess, restartTimer, stream } = session;
     if (ffmpegProcess && !ffmpegProcess.killed) {
       ffmpegProcess.kill('SIGINT');
     }
     clearTimeout(restartTimer);
-    // Start a new encoding session with the same identifier and stream.
     startEncoding(identifier, stream);
   } else {
-    console.log(`${identifier}: No active encoding session found to restart.`);
+    console.log(`${identifier}: No active encoding session found.`);
   }
 }
-
-// -----------------------------------------------------
-// Example usage:
-// Assume you have two unique input streams for two separate cameras or sources:
-// let stream1 = getStreamForCamera1();
-// let stream2 = getStreamForCamera2();
-
-// Start multiple concurrent encoding sessions:
-startEncoding('camera1', stream1);
-startEncoding('camera2', stream2);
 */
