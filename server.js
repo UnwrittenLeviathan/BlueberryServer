@@ -79,14 +79,13 @@ udpServer.on('message', (msg, rinfo) => {
     if(msg.toString().indexOf("int") == -1) {
         temperature = msg.toString().substring(msg.toString().lastIndexOf("_")+1);
         cameraIdentifier = msg.toString().substring(0, 7);
-        temperatureBuffer[cameraIdentifier] = temperature;
         // console.log
         //Update for better error handling.
         if(temperatureBuffer[cameraIdentifier] !== 'undefined' && temperature != temperatureBuffer[cameraIdentifier] && temperature !== 'undefined' && cameraIdentifier !== 'undefined') {
         	const sql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
     	    db.query(sql, [cameraIdentifier, temperature], (err, result) => {
     	      if (err) throw err;
-    	      console.log(`Temperature ${temperatureBuffer} logged in database.`);
+    	      console.log(`Temperature ${temperature} logged in database.`);
     	    });
         	temperatureBuffer[cameraIdentifier] = temperature;
         }
@@ -279,6 +278,8 @@ wsServer.on('connection', (ws, req)=>{
             const buffer = Buffer.from(data);
             const validJPEG = isValidJPEG(buffer) ? buffer : repairJPEG(buffer);
 
+            // Make activeEncodings contain the: ffmpegProcess, stream, encodingRestarting, encodingShutdown, restartTimer
+            // Key should be the camera number
             if (encodingRestarting) {
                 jpegBufferQueue.push(validJPEG);
                 console.log("Encoding restarting — buffering frame.");
