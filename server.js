@@ -267,38 +267,20 @@ wsServer.on('connection', (ws, req)=>{
                 console.error("Stream not writable — restarting encoding.");
                 restartEncoding();
              }
-
-
-            // if (isValidJPEG(buffer)) {
-            //     if (ffmpegProcess?.stdin.writable) {
-            //         stream.write(buffer); // Write incoming frame to FFmpeg
-            //         // console.log("Writing buffer")
-            //     } else {
-            //         console.error("Buffer not writable");
-            //         restartEncoding();
-            //     }
-            // } else {
-            //     console.error('Invalid JPEG data detected!');
-            //     if (ffmpegProcess?.stdin.writable) {
-            //         stream.write(repairJPEG(buffer)); // Write incoming frame to FFmpeg
-            //         // console.log("Writing buffer")
-            //     } else {
-            //         console.error("Buffer not writable");
-            //         restartEncoding();
-            //     }
-            // }
         } else {  // Handle non-binary data (Text)
             console.log(`Received WebSocket text message: ${data.toString()}`);
         }
 
-		webClients.forEach((ws, i) => {
-			if(webClients[i] == ws && ws.readyState === ws.OPEN){
-				ws.send(data);
-			} else{
-				webClients.splice(i, 1);
-				console.log("WEB CLIENT DISCONNECTED")
-			}
-		});
+        webClients = webClients.filter((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(data);
+                return true;
+            } else {
+                console.log("WEB CLIENT DISCONNECTED");
+                return false;
+            }
+        });
+
 	});
 
 	ws.on("error", (error) => {
