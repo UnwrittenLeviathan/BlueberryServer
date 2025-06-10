@@ -46,16 +46,8 @@ let temperatureBuffer = {};
 let baseFilePath = process.env.SAVE_FILEPATH;
 let secondFilePath = process.env.SAVE_FILEPATH_BACK;
 
-const activeEncodings = {};
-let stream = new PassThrough(); // Buffered pipeline for efficiency
-let ffmpegProcess;
-
-let restartTimer;
-let encodingStarted = false; // Flag to track encoding state
-let encodingRestarting = false;
+const cameras = {};
 let encodingShutdown = false;
-let jpegBufferQueue = [];
-
 let cameraIdentifierWS;
 
 db.connect((err) => {
@@ -101,8 +93,10 @@ udpServer.bind(9090, () => {
 function startEncoding(identifier) {
     const { baseTempFile, outputFile } = generateFileNames(identifier);
 
-    console.log(`Starting new FFmpeg encoding session: ${baseTempFile}`);
-    ffmpegProcess = spawn("ffmpeg", [
+    const stream = new PassThrough();
+
+    console.log(`Starting new FFmpeg encoding session: ${baseTempFile} for ${identifier}`);
+    const ffmpegProcess = spawn("ffmpeg", [
     	"-f", "image2pipe",
         "-framerate", "7",
         "-i", "pipe:0",
@@ -114,82 +108,136 @@ function startEncoding(identifier) {
         baseTempFile,
     ]);
 
-    ffmpegProcess.stdout.on("data", (data) => {
+  // Store or update the camera state, including the PassThrough stream.
+    cameras[identifier] = {
+        ffmpegProcess,
+        stream, // The PassThrough stream is part of camera's state.
+        encodingRestarting: false,
+        restartTimer: null,
+        jpegBufferQueue: [] // For buffered JPEG frames, if needed.
+    };
+
+    cameras[identifier].stream.pipe(ffmpegProcess.stdin);
+
+    // Listen for FFmpeg progress output.
+    cameras[identifier].ffmpegProcess.stdout.on("data", (data) => {
         const output = data.toString();
-        if(output.indexOf('continue') == -1) {
-            console.log("FFmpeg Progress:", output);
+        if (!output.includes("continue")) {
+            console.log(`FFmpeg Progress for ${identifier}: ${output}`);
         }
     });
 
-    ffmpegProcess.on('exit', (code, signal) => {
-        if(code == 0) {
-            console.log('Encoding finished. Renaming file...');
-
-            // Wait a short time before renaming to ensure the file has been flushed.
+  // Handle FFmpeg exit to rename files accordingly.
+    cameras[identifier].ffmpegProcess.on("exit", (code, signal) => {
+        if (code === 0) {
+            console.log(`Encoding finished for ${identifier}. Renaming file...`);
             setTimeout(() => {
                 if (!fs.existsSync(baseTempFile)) {
-                    console.error(`Source file ${baseTempFile} does not exist after waiting. Skipping rename.`);
+                    console.error(`Source file ${baseTempFile} not found for ${identifier}. Skipping rename.`);
                     return;
                 }
                 try {
                     fs.renameSync(baseTempFile, outputFile);
-                    console.log('File renamed successfully:', outputFile);
+                    console.log(`File renamed for ${identifier}: ${outputFile}`);
                 } catch (renameErr) {
-                    console.error('Error renaming file:', renameErr);
+                    console.error(`Error renaming file for ${identifier}:`, renameErr);
                 }
-            }, 1000);  // Delay for 1 second; adjust as necessary.
-        } else if(signal == 'SIGINT' || signal == 'SIGTERM') {
-            console.log(`FFmpeg exited with code: ${code}, signal: ${signal}`);
+            }, 1000);
+        } else if (signal === "SIGINT" || signal === "SIGTERM") {
+            console.log(`FFmpeg for ${identifier} exited with code ${code}, signal ${signal}.`);
             if (!fs.existsSync(baseTempFile)) {
-                console.error(`Source file ${baseTempFile} does not exist after waiting. Skipping rename.`);
+                console.error(`Source file ${baseTempFile} not found for ${identifier}. Skipping rename.`);
                 return;
             }
             try {
                 fs.renameSync(baseTempFile, outputFile);
-                console.log('File renamed successfully:', outputFile);
+                console.log(`File renamed for ${identifier}: ${outputFile}`);
             } catch (renameErr) {
-                console.error('Error renaming file:', renameErr);
+                console.error(`Error renaming file for ${identifier}:`, renameErr);
             }
         }
     });
 
-    ffmpegProcess.on("error", (err) => {
+  // Handle FFmpeg process errors.
+    cameras[identifier].ffmpegProcess.on("error", (err) => {
         if (err.code === "EPIPE") {
-            console.warn("EPIPE detected: Stream closed unexpectedly.");
+            console.warn(`EPIPE error for ${identifier}: stream closed unexpectedly.`);
         }
-        stream.end(); // Close the stream safely
+        // End the stream and FFmpeg's stdin.
+        stream.end();
         ffmpegProcess.stdin.end();
     });
 
-    // **Schedule hourly restart**
-    restartTimer = setTimeout(() => restartEncoding(identifier), timeToRestartVideo); // 10 minutes
-    
-    stream.pipe(ffmpegProcess.stdin);
-    encodingRestarting = false;
-    
-    // Flush buffered JPEGs after restart
-    if (jpegBufferQueue.length > 0) {
-      console.log(`Flushing ${jpegBufferQueue.length} buffered frames...`);
-      jpegBufferQueue.forEach(frame => {
-        if (ffmpegProcess?.stdin.writable) {
-          stream.write(frame);
-        }
-      });
-      jpegBufferQueue = [];
+    // Schedule an automatic restart for the camera's encoding session.
+    cameras[identifier].restartTimer = setTimeout(() => restartEncoding(identifier), timeToRestartVideo);
+
+    cameras[identifier].encodingRestarting = false;
+
+    // Flush any buffered JPEG frames, if there are any.
+    if (cameras[identifier].jpegBufferQueue.length > 0) {
+        console.log(`Flushing ${cameras[identifier].jpegBufferQueue.length} buffered frames for ${identifier}...`);
+        cameras[identifier].jpegBufferQueue.forEach((frame) => {
+            if (ffmpegProcess.stdin.writable) {
+                ffmpegProcess.stdin.write(frame);
+            }
+        });
+        cameras[identifier].jpegBufferQueue = [];
     }
 }
 
-// **Function to restart FFmpeg gracefully**
 function restartEncoding(identifier) {
-    encodingRestarting = true;
-    console.log("Restarting FFmpeg encoding...");
-    
-    clearTimeout(restartTimer); // Cancel previous timer
-    stream.end();
-    ffmpegProcess.stdin.end();
-    
-    stream = new PassThrough(); // Reset buffered stream
-    setTimeout(() => startEncoding(identifier), encodingRestartPause);  // Restart FFmpeg
+  const camera = cameras[identifier];
+  if (!camera) {
+    console.error(`Camera ${identifier} not found for restart.`);
+    return;
+  }
+  console.log(`Restarting encoding for ${identifier}...`);
+  camera.encodingRestarting = true;
+  if (camera.ffmpegProcess) {
+    camera.stream.end();
+    camera.ffmpegProcess.stdin.end();
+  }
+  // Small delay to free up resources before restarting.
+  setTimeout(() => {
+    startEncoding(identifier);
+  }, encodingRestartPause);
+}
+
+function checkCamera(identifier) {
+  if (cameras[identifier]) {
+    // console.error(`Camera ${identifier} already exists!`);
+    return cameras[identifier];
+  }
+  console.log(`Adding new camera: ${identifier}`);
+  startEncoding(identifier);
+}
+
+function removeCamera(identifier) {
+  const camera = cameras[identifier];
+  if (!camera) {
+    console.error(`Camera ${identifier} not found for removal.`);
+    return;
+  }
+  console.log(`Removing camera: ${identifier}`);
+  
+  // Clear the restart timer.
+  if (camera.restartTimer) {
+    clearTimeout(camera.restartTimer);
+  }
+  
+  // Unpipe and destroy the PassThrough stream.
+  camera.stream.unpipe();
+  if (camera.stream.destroy) {
+    camera.stream.destroy();
+  }
+
+  // Terminate the FFmpeg process.
+  if (camera.ffmpegProcess) {
+    camera.ffmpegProcess.kill("SIGTERM");
+  }
+  
+  // Remove the camera from our global state.
+  delete cameras[identifier];
 }
 
 function broadcastMessage(message) {
@@ -262,7 +310,6 @@ function generateFileNames(identifier) {
 wsServer.on('connection', (ws, req)=>{
 	const clientIP = req.socket.remoteAddress;
     console.log(`Client IP: ${clientIP} connected`);
-	// connectedClients.push(ws);
 
 	ws.on('message', data => {
 		if(data.indexOf("WEB_CLIENT") != -1) {
@@ -270,25 +317,20 @@ wsServer.on('connection', (ws, req)=>{
 			console.log("WEB_CLIENT ADDED");
 		} else if (Buffer.isBuffer(data)) {  // Handle binary data (JPEG)
             cameraIdentifierWS = "cam_"+data[11].toString();
-            if (!encodingStarted) {
-                console.log("Received first WebSocket frame, starting FFmpeg...");
-                startEncoding(cameraIdentifierWS);
-                encodingStarted = true;
-            }
+            currCamera = checkCamera(cameraIdentifierWS);
+            if (typeof currCamera == 'undefined') currCamera = checkCamera(cameraIdentifierWS);
+
             const buffer = Buffer.from(data);
             const validJPEG = isValidJPEG(buffer) ? buffer : repairJPEG(buffer);
-
-            // Make activeEncodings contain the: ffmpegProcess, stream, encodingRestarting, encodingShutdown, restartTimer
-            // Key should be the camera number
-            if (encodingRestarting) {
-                jpegBufferQueue.push(validJPEG);
+            if (currCamera.encodingRestarting) {
+                currCamera.jpegBufferQueue.push(validJPEG);
                 console.log("Encoding restarting — buffering frame.");
-             } else if (ffmpegProcess?.stdin.writable) {
-                stream.write(validJPEG);
-             } else if(!encodingShutdown) {
+            } else if (currCamera.ffmpegProcess?.stdin.writable) {
+                currCamera.stream.write(validJPEG);
+            } else if(!encodingShutdown) {
                 console.error("Stream not writable — restarting encoding.");
                 restartEncoding(cameraIdentifierWS);
-             }
+            }
         } else {  // Handle non-binary data (Text)
             console.log(`Received WebSocket text message: ${data.toString()}`);
         }
@@ -403,10 +445,13 @@ function gracefulShutdown() {
   });
 
   // Stop FFmpeg process if running
-  if (ffmpegProcess && !ffmpegProcess.killed) {
-    ffmpegProcess.kill('SIGINT');
-    console.log('FFmpeg process terminated.');
-  }
+    Object.keys(cameras).forEach((identifier) => {
+        // console.log(`Processing camera: ${identifier}`);
+        if (cameras[identifier].ffmpegProcess && !cameras[identifier].ffmpegProcess.killed) {
+            cameras[identifier].ffmpegProcess.kill('SIGINT');
+            console.log('FFmpeg process terminated.');
+          }
+    });
 
   // Allow time for cleanup before exiting
   setTimeout(() => {
