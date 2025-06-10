@@ -45,12 +45,18 @@ let temperatureBuffer = {};
 
 let baseFilePath = process.env.SAVE_FILEPATH;
 let secondFilePath = process.env.SAVE_FILEPATH_BACK;
+
+const activeEncodings = {};
 let stream = new PassThrough(); // Buffered pipeline for efficiency
 let ffmpegProcess;
+
 let restartTimer;
 let encodingStarted = false; // Flag to track encoding state
 let encodingRestarting = false;
+let encodingShutdown = false;
 let jpegBufferQueue = [];
+
+let cameraIdentifierWS;
 
 db.connect((err) => {
   if (err) throw err;
@@ -93,30 +99,8 @@ udpServer.bind(9090, () => {
 });
 
 //Add functionality for more cameras, add var to pass into function.
-function startEncoding() {
-	now = new Date();
-	year = now.getFullYear();
-	month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-	day = String(now.getDate()).padStart(2, '0');
-	hours = String(now.getHours()).padStart(2, '0');
-	minutes = String(now.getMinutes()).padStart(2, '0');
-	seconds = String(now.getSeconds()).padStart(2, '0');
-	milliseconds = String(now.getMilliseconds()).padStart(3, '0');
-    formattedDateTime = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-    var baseTempFile;
-    var outputFile;
-
-    try {
-        fs.accessSync(baseFilePath, fs.constants.W_OK);
-        console.log("Directory is writable.");
-        baseTempFile = `${baseFilePath}`+`.${formattedDateTime}.mp4`;
-        outputFile = `${baseFilePath}`+`${formattedDateTime}.mp4`;
-    } catch (err) {
-        console.log("Directory is NOT writable, using backup.");
-        baseTempFile = `${secondFilePath}`+`.${formattedDateTime}.mp4`;
-        outputFile = `${secondFilePath}`+`${formattedDateTime}.mp4`;
-    }
-
+function startEncoding(identifier) {
+    const { baseTempFile, outputFile } = generateFileNames(identifier);
 
     console.log(`Starting new FFmpeg encoding session: ${baseTempFile}`);
     ffmpegProcess = spawn("ffmpeg", [
@@ -138,28 +122,41 @@ function startEncoding() {
         }
     });
 
-    ffmpegProcess.on('close', (code) => {
-      if (code === 0) {
-        console.log('Encoding finished. Renaming file...');
+    // ffmpegProcess.on('close', (code) => {
+        
+    // });
 
-        // Wait a short time before renaming to ensure the file has been flushed.
-        setTimeout(() => {
-          if (!fs.existsSync(baseTempFile)) {
-            console.error(`Source file ${baseTempFile} does not exist after waiting. Skipping rename.`);
-            return;
-          }
-          try {
-            fs.renameSync(baseTempFile, outputFile);
-            console.log('File renamed successfully:', outputFile);
-          } catch (renameErr) {
-            console.error('Error renaming file:', renameErr);
-          }
-        }, 1000);  // Delay for 1 second; adjust as necessary.
-      } else {
-        console.error('FFmpeg process exited with code:', code);
-      }
+    ffmpegProcess.on('exit', (code, signal) => {
+        if(code == 0) {
+            console.log('Encoding finished. Renaming file...');
+
+            // Wait a short time before renaming to ensure the file has been flushed.
+            setTimeout(() => {
+                if (!fs.existsSync(baseTempFile)) {
+                    console.error(`Source file ${baseTempFile} does not exist after waiting. Skipping rename.`);
+                    return;
+                }
+                try {
+                    fs.renameSync(baseTempFile, outputFile);
+                    console.log('File renamed successfully:', outputFile);
+                } catch (renameErr) {
+                    console.error('Error renaming file:', renameErr);
+                }
+            }, 1000);  // Delay for 1 second; adjust as necessary.
+        } else if(signal == 'SIGINT' || signal == 'SIGTERM') {
+            console.log(`FFmpeg exited with code: ${code}, signal: ${signal}`);
+            if (!fs.existsSync(baseTempFile)) {
+                console.error(`Source file ${baseTempFile} does not exist after waiting. Skipping rename.`);
+                return;
+            }
+            try {
+                fs.renameSync(baseTempFile, outputFile);
+                console.log('File renamed successfully:', outputFile);
+            } catch (renameErr) {
+                console.error('Error renaming file:', renameErr);
+            }
+        }
     });
-
 
     ffmpegProcess.on("error", (err) => {
         if (err.code === "EPIPE") {
@@ -170,7 +167,7 @@ function startEncoding() {
     });
 
     // **Schedule hourly restart**
-    restartTimer = setTimeout(restartEncoding, timeToRestartVideo); // 10 minutes
+    restartTimer = setTimeout(() => restartEncoding(identifier), timeToRestartVideo); // 10 minutes
     
     stream.pipe(ffmpegProcess.stdin);
     encodingRestarting = false;
@@ -188,7 +185,7 @@ function startEncoding() {
 }
 
 // **Function to restart FFmpeg gracefully**
-function restartEncoding() {
+function restartEncoding(identifier) {
     encodingRestarting = true;
     console.log("Restarting FFmpeg encoding...");
     
@@ -197,7 +194,7 @@ function restartEncoding() {
     ffmpegProcess.stdin.end();
     
     stream = new PassThrough(); // Reset buffered stream
-    setTimeout(startEncoding, encodingRestartPause);  // Restart FFmpeg
+    setTimeout(() => startEncoding(identifier), encodingRestartPause);  // Restart FFmpeg
 }
 
 function broadcastMessage(message) {
@@ -239,6 +236,34 @@ function repairJPEG(buffer) {
     return buffer;
 }
 
+function generateFileNames(identifier) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+  
+  const formattedDateTime = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+  let baseTempFile;
+  let outputFile;
+
+  try {
+    // Test if baseFilePath is writable
+    fs.accessSync(baseFilePath, fs.constants.W_OK);
+    console.log(`${identifier}: Base directory is writable.`);
+    baseTempFile = `${baseFilePath}.${identifier}_${formattedDateTime}.mp4`;
+    outputFile = `${baseFilePath}${identifier}_${formattedDateTime}.mp4`;
+  } catch (err) {
+    console.log(`${identifier}: Base directory is NOT writable, using backup.`);
+    baseTempFile = `${secondFilePath}.${identifier}_${formattedDateTime}.mp4`;
+    outputFile = `${secondFilePath}${identifier}_${formattedDateTime}.mp4`;
+  }
+  return { baseTempFile, outputFile };
+}
+
 wsServer.on('connection', (ws, req)=>{
 	const clientIP = req.socket.remoteAddress;
     console.log(`Client IP: ${clientIP} connected`);
@@ -249,9 +274,10 @@ wsServer.on('connection', (ws, req)=>{
 			webClients.push(ws);
 			console.log("WEB_CLIENT ADDED");
 		} else if (Buffer.isBuffer(data)) {  // Handle binary data (JPEG)
+            cameraIdentifierWS = "cam_"+data[11].toString();
             if (!encodingStarted) {
                 console.log("Received first WebSocket frame, starting FFmpeg...");
-                startEncoding();
+                startEncoding(cameraIdentifierWS);
                 encodingStarted = true;
             }
             const buffer = Buffer.from(data);
@@ -262,9 +288,9 @@ wsServer.on('connection', (ws, req)=>{
                 console.log("Encoding restarting — buffering frame.");
              } else if (ffmpegProcess?.stdin.writable) {
                 stream.write(validJPEG);
-             } else {
+             } else if(!encodingShutdown) {
                 console.error("Stream not writable — restarting encoding.");
-                restartEncoding();
+                restartEncoding(cameraIdentifierWS);
              }
         } else {  // Handle non-binary data (Text)
             console.log(`Received WebSocket text message: ${data.toString()}`);
@@ -326,7 +352,7 @@ app.post('/temp', async (req, res) => {
             }
             if (typeof results[0] !== "undefined") {
                 temperatureBuffer[results[0]['device_name']] = results[0]['temperature'];
-                console.log(temperatureBuffer);
+                // console.log(temperatureBuffer);
             }
         });
 
@@ -345,7 +371,8 @@ app.post('/save-video', async (req, res) => {
         // Simulating an async operation (e.g., database query)
         await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
 
-        restartEncoding();
+        //Update in future for camera that is being restarted.
+        restartEncoding(cameraIdentifierWS);
         response = "Successfully saved video";
         res.json({ response });
     } catch (error) {
@@ -357,6 +384,7 @@ app.listen(HTTP_PORT, ()=> console.log('HTTP server listening at '+HTTP_PORT));
 
 function gracefulShutdown() {
   console.log('Shutting down gracefully...');
+  encodingShutdown = true;
 
   // Close WebSocket server
   wsServer.close(() => {
@@ -407,39 +435,6 @@ const timeToRestartVideo = 10 * 60 * 1000; // For example, 10 minutes
 
 // Object to keep track of active encoding sessions.
 const activeEncodings = {};
-
- * Generates unique filenames for an encoding session.
- * @param {string} identifier - A unique identifier (e.g., 'camera1')
- * @returns {Object} An object with baseTempFile and outputFile properties.
-
-function generateFileNames(identifier) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  // Milliseconds padded to 3 digits (optional, can be added if needed)
-  // const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
-  
-  const formattedDateTime = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-  let baseTempFile;
-  let outputFile;
-
-  try {
-    // Test if baseFilePath is writable
-    fs.accessSync(baseFilePath, fs.constants.W_OK);
-    console.log(`${identifier}: Base directory is writable.`);
-    baseTempFile = `${baseFilePath}${identifier}.${formattedDateTime}.mp4`;
-    outputFile = `${baseFilePath}${identifier}.${formattedDateTime}.mp4`;
-  } catch (err) {
-    console.log(`${identifier}: Base directory is NOT writable, using backup.`);
-    baseTempFile = `${secondFilePath}${identifier}.${formattedDateTime}.mp4`;
-    outputFile = `${secondFilePath}${identifier}.${formattedDateTime}.mp4`;
-  }
-  return { baseTempFile, outputFile };
-}
 
  * Starts a unique FFmpeg encoding process for a given identifier and stream.
  * @param {string} identifier - Unique session identifier.
