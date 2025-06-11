@@ -23,7 +23,6 @@
 			<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
 			-->
 		</div>
-		<!--  -->
 		<!-- 
 		<div class="card">
 			<img id="ESP32-2" src="/">
@@ -39,13 +38,22 @@
 			<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
 			<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
 		</div> 
+		<div class="card">
+			<img id="ESP32-4" src="/">
+			<button id="ESP32-4-Right" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-4-Left" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-4-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-4-Down" onclick="sendMessage(this.id)">Down</button>
+		</div> 
 		<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button>
 		-->
 	</div>
 	<script type="text/javascript">
 		const img_1 = document.getElementById("ESP32-1");
-		// const img_2 = document.getElementById("ESP32-2");
-		// const img_3 = document.getElementById("ESP32-3");
+		const img_2 = document.getElementById("ESP32-2");
+		const img_3 = document.getElementById("ESP32-3");
+		const img_4 = document.getElementById("ESP32-4");
+		
 		var imageFrame;
 		const cam_one_temp_html = document.getElementById("cam-one-temp");
 		let urlObject;
@@ -83,8 +91,10 @@
 						imageFrame = img_1;
 					} else if(currentCam == 2) {
 						imageFrame = img_2;
-					} else {
+					} else if(currentCam == 3) {
 						imageFrame = img_3;
+					} else if(currentCam == 4) {
+						imageFrame = img_4;
 					}
 
 					urlObject = URL.createObjectURL(blobObj);

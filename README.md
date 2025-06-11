@@ -2,6 +2,11 @@
 
 ***
 
+# TODO:
+Change client file to better handle the current setup of data. Change Arduino code to send json data instead of just text data. Ensure message handling from html file to ESP32 is handled ok. Add code to Arduino to send message on open to make array in server code to store ESP32 cam sockets. 
+
+***
+
 This project aims to use an Ai Thinker ESP32 camera, with the basic sensor (OV2640) to provide a real-time stream of images to both: html clients and an ffmpeg stream for recording the images received.
 
 ***
