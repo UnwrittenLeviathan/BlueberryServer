@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" type="text/css" href="/styles.css">
 	<script src="https://d3js.org/d3.v4.js"></script>
-	<title id="title-temp">Blueberry Client</title>
+	<title>Blueberry Client</title>
 </head>
 <body>
 	<div class="cards">
@@ -48,7 +48,6 @@
 		// const img_3 = document.getElementById("ESP32-3");
 		var imageFrame;
 		const cam_one_temp_html = document.getElementById("cam-one-temp");
-		const title_temp = document.getElementById("title-temp");
 		let urlObject;
 
 		let socket;
@@ -94,9 +93,7 @@
 					var deviceName = msg.substring(0, 7);
 
 					tempString = msg.replace("cam_one_temp_", "The current temperature is ")+"°F";
-					titleString = msg.replace("cam_one_temp_", "")+"°F";
 					cam_one_temp_html.innerHTML = tempString;
-					title_temp.innerHTML = titleString;
 					console.log(tempString);
 				}
 			}
@@ -138,11 +135,8 @@
 
 	            const data = await response.json();
 	            tempString = `The current temperature is ${data['temperatureBuffer']['cam_one']}°F`;
-				cam_one_temp_html.innerHTML = tempString;
 	            console.log(tempString);
-	            
-	            titleString = `${data['temperatureBuffer']['cam_one']}°F - Blueberry Client`;
-				title_temp.innerHTML = titleString;
+				cam_one_temp_html.innerHTML = tempString;
 	        } catch (error) {
 	            console.error('Error:', error);
 	        }
