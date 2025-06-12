@@ -66,6 +66,7 @@ db.query(queryTemp, (err, results) => {
 	}
 });
 
+//Change this to be JSON
 udpServer.on('message', (msg, rinfo) => {
     // console.log(msg.toString());
     if(msg.toString().indexOf("int") == -1) {
@@ -240,6 +241,7 @@ function removeCamera(identifier) {
   delete cameras[identifier];
 }
 
+//Change arduino script for onopen message to say ESP32-CAM or something ot sort into array.
 function broadcastMessage(message) {
     webClients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
