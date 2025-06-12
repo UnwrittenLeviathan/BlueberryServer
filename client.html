@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" type="text/css" href="/styles.css">
 	<script src="https://d3js.org/d3.v4.js"></script>
-	<title>Blueberry Client</title>
+	<title id="title-temp">Blueberry Client</title>
 </head>
 <body>
 	<div class="cards">
@@ -23,6 +23,7 @@
 			<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
 			-->
 		</div>
+		<!--  -->
 		<!-- 
 		<div class="card">
 			<img id="ESP32-2" src="/">
@@ -38,24 +39,16 @@
 			<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
 			<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
 		</div> 
-		<div class="card">
-			<img id="ESP32-4" src="/">
-			<button id="ESP32-4-Right" onclick="sendMessage(this.id)">Right</button>
-			<button id="ESP32-4-Left" onclick="sendMessage(this.id)">Left</button>
-			<button id="ESP32-4-Up" onclick="sendMessage(this.id)">Up</button>
-			<button id="ESP32-4-Down" onclick="sendMessage(this.id)">Down</button>
-		</div> 
 		<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button>
 		-->
 	</div>
 	<script type="text/javascript">
 		const img_1 = document.getElementById("ESP32-1");
-		const img_2 = document.getElementById("ESP32-2");
-		const img_3 = document.getElementById("ESP32-3");
-		const img_4 = document.getElementById("ESP32-4");
-		
+		// const img_2 = document.getElementById("ESP32-2");
+		// const img_3 = document.getElementById("ESP32-3");
 		var imageFrame;
 		const cam_one_temp_html = document.getElementById("cam-one-temp");
+		const title_temp = document.getElementById("title-temp");
 		let urlObject;
 
 		let socket;
@@ -91,10 +84,8 @@
 						imageFrame = img_1;
 					} else if(currentCam == 2) {
 						imageFrame = img_2;
-					} else if(currentCam == 3) {
+					} else {
 						imageFrame = img_3;
-					} else if(currentCam == 4) {
-						imageFrame = img_4;
 					}
 
 					urlObject = URL.createObjectURL(blobObj);
@@ -103,7 +94,9 @@
 					var deviceName = msg.substring(0, 7);
 
 					tempString = msg.replace("cam_one_temp_", "The current temperature is ")+"°F";
+					titleString = msg.replace("cam_one_temp_", "")+"°F  - Blueberry Client";
 					cam_one_temp_html.innerHTML = tempString;
+					title_temp.innerHTML = titleString;
 					console.log(tempString);
 				}
 			}
@@ -145,8 +138,11 @@
 
 	            const data = await response.json();
 	            tempString = `The current temperature is ${data['temperatureBuffer']['cam_one']}°F`;
-	            console.log(tempString);
 				cam_one_temp_html.innerHTML = tempString;
+	            console.log(tempString);
+	            
+	            titleString = `${data['temperatureBuffer']['cam_one']}°F - Blueberry Client`;
+				title_temp.innerHTML = titleString;
 	        } catch (error) {
 	            console.error('Error:', error);
 	        }
