@@ -142,7 +142,7 @@ function startEncoding(identifier) {
                 } catch (renameErr) {
                     console.error(`Error renaming file for ${identifier}:`, renameErr);
                 }
-            }, 1000);
+            }, 10000);
         } else if (signal === "SIGINT" || signal === "SIGTERM") {
             console.log(`FFmpeg for ${identifier} exited with code ${code}, signal ${signal}.`);
             if (!fs.existsSync(baseTempFile)) {
@@ -297,11 +297,11 @@ function generateFileNames(identifier) {
     // Test if baseFilePath is writable
     fs.accessSync(baseFilePath, fs.constants.W_OK);
     console.log(`${identifier}: Base directory is writable.`);
-    baseTempFile = `${baseFilePath}.${identifier}_${formattedDateTime}.mp4`;
-    outputFile = `${secondFilePath}${identifier}_${formattedDateTime}.mp4`;
+    baseTempFile = `${baseFilePath}.temp_${identifier}_${formattedDateTime}.mp4`;
+    outputFile = `${baseFilePath}${identifier}_${formattedDateTime}.mp4`;
   } catch (err) {
     console.log(`${identifier}: Base directory is NOT writable, using backup.`);
-    baseTempFile = `${secondFilePath}.${identifier}_${formattedDateTime}.mp4`;
+    baseTempFile = `${secondFilePath}.temp_${identifier}_${formattedDateTime}.mp4`;
     outputFile = `${secondFilePath}${identifier}_${formattedDateTime}.mp4`;
   }
   return { baseTempFile, outputFile };
