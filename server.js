@@ -66,7 +66,6 @@ db.query(queryTemp, (err, results) => {
 	}
 });
 
-//Change this to be JSON
 udpServer.on('message', (msg, rinfo) => {
     // console.log(msg.toString());
     if(msg.toString().indexOf("int") == -1) {
@@ -241,7 +240,6 @@ function removeCamera(identifier) {
   delete cameras[identifier];
 }
 
-//Change arduino script for onopen message to say ESP32-CAM or something ot sort into array.
 function broadcastMessage(message) {
     webClients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
@@ -300,7 +298,7 @@ function generateFileNames(identifier) {
     fs.accessSync(baseFilePath, fs.constants.W_OK);
     console.log(`${identifier}: Base directory is writable.`);
     baseTempFile = `${baseFilePath}.${identifier}_${formattedDateTime}.mp4`;
-    outputFile = `${baseFilePath}${identifier}_${formattedDateTime}.mp4`;
+    outputFile = `${secondFilePath}${identifier}_${formattedDateTime}.mp4`;
   } catch (err) {
     console.log(`${identifier}: Base directory is NOT writable, using backup.`);
     baseTempFile = `${secondFilePath}.${identifier}_${formattedDateTime}.mp4`;

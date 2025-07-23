@@ -1,3 +1,4 @@
 .env
 OLD/*
 */secrets.h
+node_modules/
