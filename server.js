@@ -14,9 +14,10 @@ require('dotenv').config();
 const WS_PORT = process.env.WS_PORT;
 const HTTP_PORT = process.env.HTTP_PORT;
 const WS_URL = process.env.WS_URL;
-const requestKey = process.env.REQUEST_KEY
-const requestTemp = process.env.REQUEST_TEMP
-const requestVideo = process.env.REQUEST_VIDEO
+const requestKey = process.env.REQUEST_KEY;
+const requestTemp = process.env.REQUEST_TEMP;
+const requestVideo = process.env.REQUEST_VIDEO;
+
 const timeToRestartVideo = 60/*seconds per minute*/ * 60/*minute per hour*/ * 1000/*milliseconds per second*/;
 const encodingRestartPause = 100; //100 ms time before restarting ffmpeg encoding stream 
 
