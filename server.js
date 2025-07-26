@@ -363,7 +363,8 @@ wsServer.on('connection', (ws, req)=>{
 
 app.use(express.static("."));
 app.use(bodyParser.json());
-app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './client.html')));
+app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/home.html')));
+app.get('/recipes', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/recipes.html')));
 app.post('/config', async (req, res) => {
     try {
         if (req.body.requestKey !== requestKey) {
