@@ -14,6 +14,9 @@ require('dotenv').config();
 const WS_PORT = process.env.WS_PORT;
 const HTTP_PORT = process.env.HTTP_PORT;
 const WS_URL = process.env.WS_URL;
+const requestKey = process.env.REQUEST_KEY
+const requestTemp = process.env.REQUEST_TEMP
+const requestVideo = process.env.REQUEST_VIDEO
 const timeToRestartVideo = 60/*seconds per minute*/ * 60/*minute per hour*/ * 1000/*milliseconds per second*/;
 const encodingRestartPause = 100; //100 ms time before restarting ffmpeg encoding stream 
 
@@ -362,7 +365,7 @@ app.use(bodyParser.json());
 app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './client.html')));
 app.post('/config', async (req, res) => {
     try {
-        if (req.body.requestKey !== 'my-client-request') {
+        if (req.body.requestKey !== requestKey) {
             return res.status(403).json({ error: 'Unauthorized request' });
         }
 
@@ -377,7 +380,7 @@ app.post('/config', async (req, res) => {
 });
 app.post('/temp', async (req, res) => {
     try {
-        if (req.body.requestKey !== 'my-client-request-temp') {
+        if (req.body.requestKey !== requestTemp) {
             return res.status(403).json({ error: 'Unauthorized request' });
         }
 
@@ -403,7 +406,7 @@ app.post('/temp', async (req, res) => {
 });
 app.post('/save-video', async (req, res) => {
     try {
-        if (req.body.requestKey !== 'my-client-request-save-video') {
+        if (req.body.requestKey !== requestVideo) {
             return res.status(403).json({ error: 'Unauthorized request' });
         }
 
