@@ -1,52 +1,46 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<link rel="stylesheet" type="text/css" href="/Styles/styles.css">
-	<script src="https://d3js.org/d3.v4.js"></script>
-	<title id="title-temp">Blueberry Client</title>
+	<?php include 'head.php';?>
 </head>
 <body>
-	<div class="cards">
-		<div class="card">
-			<img id="ESP32-1">
-			<h2 id="cam-one-temp">Updating Temperature...</h2>
-			<button onclick="saveVideo()">
-				Save Video
-			</button>
-			<h2 id="time-testing"></h2>
-			<!--
-			<button id="ESP32-1-Right" onclick="sendMessage(this.id)">Left</button>
-			<button id="ESP32-1-Left" onclick="sendMessage(this.id)">Right</button>
-			<button id="ESP32-1-Up" onclick="sendMessage(this.id)">Up</button>
-			<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
+	<?php include 'body-header.php'; ?>
+	<main>
+		<div class="cards">
+			<div class="card">
+				<img id="ESP32-1">
+				<h2 id="cam-one-temp">Updating Temperature...</h2>
+				<button onclick="saveVideo()">
+					Save Video
+				</button>
+				<h2 id="time-testing"></h2>
+				<!--
+				<button id="ESP32-1-Right" onclick="sendMessage(this.id)">Left</button>
+				<button id="ESP32-1-Left" onclick="sendMessage(this.id)">Right</button>
+				<button id="ESP32-1-Up" onclick="sendMessage(this.id)">Up</button>
+				<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
+				-->
+			</div>
+			<!--  -->
+			<!-- 
+			<div class="card">
+				<img id="ESP32-2" src="/">
+				<button id="ESP32-2-Right" onclick="sendMessage(this.id)">Right</button>
+				<button id="ESP32-2-Left" onclick="sendMessage(this.id)">Left</button>
+				<button id="ESP32-2-Up" onclick="sendMessage(this.id)">Up</button>
+				<button id="ESP32-2-Down" onclick="sendMessage(this.id)">Down</button>
+			</div>
+			<div class="card">
+				<img id="ESP32-3" src="/">
+				<button id="ESP32-3-Right" onclick="sendMessage(this.id)">Right</button>
+				<button id="ESP32-3-Left" onclick="sendMessage(this.id)">Left</button>
+				<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
+				<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
+			</div> 
+			<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button>
 			-->
 		</div>
-		<div class="card">
-			<button onclick="window.location.href='/recipes'">
-				Go to Recipes
-			</button>
-		</div>
-		<!--  -->
-		<!-- 
-		<div class="card">
-			<img id="ESP32-2" src="/">
-			<button id="ESP32-2-Right" onclick="sendMessage(this.id)">Right</button>
-			<button id="ESP32-2-Left" onclick="sendMessage(this.id)">Left</button>
-			<button id="ESP32-2-Up" onclick="sendMessage(this.id)">Up</button>
-			<button id="ESP32-2-Down" onclick="sendMessage(this.id)">Down</button>
-		</div>
-		<div class="card">
-			<img id="ESP32-3" src="/">
-			<button id="ESP32-3-Right" onclick="sendMessage(this.id)">Right</button>
-			<button id="ESP32-3-Left" onclick="sendMessage(this.id)">Left</button>
-			<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
-			<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
-		</div> 
-		<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button>
-		-->
-	</div>
+	</main>
 	<script type="text/javascript">
 		const img_1 = document.getElementById("ESP32-1");
 		// const img_2 = document.getElementById("ESP32-2");

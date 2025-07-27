@@ -1,8 +1,8 @@
-@import url('https://fonts.googleapis.com/css?family=Quicksand&display=swap');
+/*@import url('https://fonts.googleapis.com/css?family=Quicksand&display=swap');*/
 
 html {
 	font-size: 22px;
-	background-color: steelblue;
+	/*background-color: steelblue;*/
 }
 
 h1,
@@ -12,8 +12,22 @@ h2 {
 }
 
 body {
-	color: whitesmoke;
+	background-color: lightsteelblue;
 	padding: 1rem;
+}
+
+header {
+	background-color: lightgrey;
+	width: 100%;
+}
+
+button {
+	border-radius: 15px;
+	box-shadow: 15%;
+}
+
+.container {
+	width: 100%;
 }
 
 .card {

@@ -379,9 +379,11 @@ app.all(/.+\.php$/, phpExpress.router);
 app.get('/recipes', (req, res) => {
   res.render('recipes');   // looks for Routes/recipes.php
 });
+app.get('/', (req, res) => {
+  res.render('home');   // looks for Routes/home.php
+});
 
-
-app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/home.html')));
+// app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/home.html')));
 // app.get('/recipes', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/recipes.html')));
 
 app.post('/config', async (req, res) => {
