@@ -1,46 +1,55 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n'
 
-# Define source and destination directories
-SOURCE_DIR="/mnt/usb/ESP32-Cam"
-DATE=$(date +"%Y-%m-%d")
-echo "Today's date is: $DATE"
-DEST_DIR="/home/savile/Documents/ESP32-Cam/$DATE"
+# ─── CONFIG ────────────────────────────────────────────────────────────────────
+SOURCE_DIR="/home/savile/Documents/ESP32-Cam"
 KEYWORD="temp_"
+DATE=$(date +%F)
+DEST_DIR="/home/savile/Documents/NAS-ESP32-Images/$DATE"
 
-# Create destination directory if it doesn't exist
 mkdir -p "$DEST_DIR"
 
-# Find matching files and calculate total size
-FILES=($(find "$SOURCE_DIR" -type f ! -name "*$KEYWORD*"))
+# ─── GATHER MP4 FILES (RELATIVE PATHS) ────────────────────────────────────────
+# -printf '%P' drops leading './'
+mapfile -d '' FILES_REL < <(
+  cd "$SOURCE_DIR"
+  find . \
+    -type f \
+    -iname '*.mp4' \
+    ! -name "*${KEYWORD}*" \
+    -print0 \
+    | sed -z 's|^\./||'
+)
+
+# ─── EXIT IF NOTHING TO DO ─────────────────────────────────────────────────────
+if (( ${#FILES_REL[@]} == 0 )); then
+  echo "⚠️  No .mp4 files found (excluding '*${KEYWORD}*'). Exiting."
+  exit 0
+fi
+
+# ─── PRINT FILE LIST ───────────────────────────────────────────────────────────
+echo "📂 Files to transfer (${#FILES_REL[@]}):"
+for rel in "${FILES_REL[@]}"; do
+  printf "  - %s/%s\n" "$SOURCE_DIR" "$rel"
+done
+
+# ─── CALCULATE TOTAL BYTES ─────────────────────────────────────────────────────
 TOTAL_BYTES=0
-
-for FILE in "${FILES[@]}"; do
-    TOTAL_BYTES=$((TOTAL_BYTES + $(stat -c%s "$FILE")))
+for rel in "${FILES_REL[@]}"; do
+  TOTAL_BYTES=$(( TOTAL_BYTES + $(stat --printf="%s" "$SOURCE_DIR/$rel") ))
 done
 
-MOVED_BYTES=0
+# ─── TRANSFER VIA TAR → PV → TAR ───────────────────────────────────────────────
+# Requires: pv   (apt-get install pv)
+#
+# 1. tar --remove-files ­–cf - …    → create an archive of all files, removing them from SOURCE_DIR  
+# 2. | pv -s $TOTAL_BYTES          → show a single progress bar across the entire archive  
+# 3. | tar -xf - ­–C DEST_DIR       → extract into DEST_DIR, preserving paths/timestamps
 
-echo "Moving files containing \"$KEYWORD\" from $SOURCE_DIR to $DEST_DIR"
-echo "Total size to move: $TOTAL_BYTES bytes"
-echo ""
+echo
+tar --remove-files -C "$SOURCE_DIR" -cf - "${FILES_REL[@]}" \
+  | pv -s "$TOTAL_BYTES" \
+  | tar -xf - -C "$DEST_DIR"
 
-# Progress bar function based on bytes moved
-progress_bar() {
-    local PROG=$((MOVED_BYTES * 100 / TOTAL_BYTES))
-    local DONE=$((PROG / 2))
-    local LEFT=$((50 - DONE))
-    local FILL=$(printf "%${DONE}s" | tr ' ' '=')
-    local EMPTY=$(printf "%${LEFT}s")
-    printf "\rProgress: [${FILL}${EMPTY}] %d%% (%s / %s bytes)" $PROG $MOVED_BYTES $TOTAL_BYTES
-}
-
-# Move files and update progress
-for FILE in "${FILES[@]}"; do
-    FILE_SIZE=$(stat -c%s "$FILE")
-    mv "$FILE" "$DEST_DIR/"
-    MOVED_BYTES=$((MOVED_BYTES + FILE_SIZE))
-    progress_bar
-    sleep 0.1  # Optional: makes the progress visible
-done
-
-echo -e "\nDone!"
+echo -e "\n🎯 Transfer complete!"

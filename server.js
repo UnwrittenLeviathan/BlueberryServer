@@ -8,6 +8,10 @@ const { spawn } = require('child_process');
 const dgram = require('dgram');
 const mysql = require('mysql');
 const { PassThrough } = require("stream");
+const phpExpress  = require('php-express')({
+  binPath: 'php'    // path to your PHP CLI
+});
+
 
 require('dotenv').config();
 
@@ -363,8 +367,23 @@ wsServer.on('connection', (ws, req)=>{
 
 app.use(express.static("."));
 app.use(bodyParser.json());
+// Register .php as a view engine
+app.engine('php', phpExpress.engine);
+app.set('views', path.join(__dirname, 'Routes'));
+app.set('view engine', 'php');
+
+// Route all .php files through the PHP engine
+app.all(/.+\.php$/, phpExpress.router);
+
+// Now you can
+app.get('/recipes', (req, res) => {
+  res.render('recipes');   // looks for Routes/recipes.php
+});
+
+
 app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/home.html')));
-app.get('/recipes', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/recipes.html')));
+// app.get('/recipes', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/recipes.html')));
+
 app.post('/config', async (req, res) => {
     try {
         if (req.body.requestKey !== requestKey) {
