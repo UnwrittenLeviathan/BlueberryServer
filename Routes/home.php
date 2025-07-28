@@ -155,7 +155,8 @@
 	                body: JSON.stringify({ requestKey: 'my-client-request-save-video' }) 
 	            });
 
-	            // const data = await response.json();
+	            const data = await response.json();
+	            console.log(data.response);
 
 	        } catch (error) {
 	            console.error('Error:', error);
