@@ -1,11 +1,13 @@
 .card {
 	/*background-color: #ccffff;*/
 	border-radius: 1rem;
+	box-shadow: 3px 3px 10px -3px;
 }
 
 .navbar {
 	border-bottom-left-radius: 0.5rem;
 	border-bottom-right-radius: 0.5rem;
+	background-color: deepskyblue;
 }
 
 .nav-item {
@@ -18,11 +20,15 @@
 	transition-duration: 0.5;
 }
 
-.nav-item:hover{
+.nav-item:hover {
 	background-color: lightblue;
 }
 
 .nav-item:active {
+	box-shadow: inset 3px 3px 5px -3px;
+}
+
+.btn:active {
 	box-shadow: inset 3px 3px 5px -3px;
 }
 

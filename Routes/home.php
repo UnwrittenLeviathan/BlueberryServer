@@ -5,7 +5,7 @@
 </head>
 <body style="background-color: #ecf2f9;">
 	<?php include 'body-header.php'; ?>
-	<div class="container card shadow">
+	<div class="container card">
 		<div class="pt-3">
 			<img id="ESP32-1" class="img-fluid d-block mx-auto">
 			<!-- <button onclick="saveVideo()">
