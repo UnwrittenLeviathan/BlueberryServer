@@ -1,57 +1,36 @@
-/*@import url('https://fonts.googleapis.com/css?family=Quicksand&display=swap');*/
-
-html {
-	font-size: 22px;
-	/*background-color: steelblue;*/
-}
-
-h1,
-h2 {
-	font-family: 'Quicksand', sans-serif;
-	text-align: center;
-}
-
-body {
-	background-color: lightsteelblue;
-	padding: 1rem;
-}
-
-button {
-	border-radius: 15px;
-	box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
-	/*border: 3px solid #00ffff;*/
-	width: 	100%;
-	padding: 	5px;
-	font-size: 	16px;
-	background-color: 	steelblue;
-	color: 	lightskyblue;
-}
-
-button:active {
-    transform: scale(0.98);	
-    box-shadow: 3px 2px 22px 1px rgba(0, 0, 0, 0.24);
-}
-
-.container {
-	width: 100%;
-}
-
 .card {
-	box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
-	background-color: lightgray;
+	/*background-color: #ccffff;*/
+	border-radius: 1rem;
+}
+
+.navbar {
+	border-bottom-left-radius: 0.5rem;
+	border-bottom-right-radius: 0.5rem;
+}
+
+.nav-item {
+	background-color: white;
+	padding-left: 1rem;
+	padding-right: 1rem;
+	font-size: 24px;
+	border-radius: 0.5rem;
+	box-shadow: 3px 3px 10px -3px;
+	transition-duration: 0.5;
+}
+
+.nav-item:hover{
+	background-color: lightblue;
+}
+
+.nav-item:active {
+	box-shadow: inset 3px 3px 5px -3px;
+}
+
+.nav-link {
 	color: black;
-	padding: 1rem;
 }
 
-.cards {
-	max-width: 2000px;
-	margin: 0 auto;
-	display: grid;
-	grid-gap: 1rem;
+.vr {
+	margin-left: 1rem;
+	margin-right: 1rem;
 }
-
-/*@media (min-width: 800px) {
-	.cards {
-		grid-template-columns: repeat(2, 1fr);
-	}
-}*/

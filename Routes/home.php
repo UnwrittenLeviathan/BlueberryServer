@@ -3,44 +3,44 @@
 <head>
 	<?php include 'head.php';?>
 </head>
-<body>
+<body style="background-color: #ecf2f9;">
 	<?php include 'body-header.php'; ?>
-	<main>
-		<div class="cards">
-			<div class="card">
-				<img id="ESP32-1">
-				<h2 id="cam-one-temp">Updating Temperature...</h2>
-				<button onclick="saveVideo()">
-					Save Video
-				</button>
-				<h2 id="time-testing"></h2>
-				<!--
-				<button id="ESP32-1-Right" onclick="sendMessage(this.id)">Left</button>
-				<button id="ESP32-1-Left" onclick="sendMessage(this.id)">Right</button>
-				<button id="ESP32-1-Up" onclick="sendMessage(this.id)">Up</button>
-				<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
-				-->
-			</div>
-			<!--  -->
-			<!-- 
-			<div class="card">
-				<img id="ESP32-2" src="/">
-				<button id="ESP32-2-Right" onclick="sendMessage(this.id)">Right</button>
-				<button id="ESP32-2-Left" onclick="sendMessage(this.id)">Left</button>
-				<button id="ESP32-2-Up" onclick="sendMessage(this.id)">Up</button>
-				<button id="ESP32-2-Down" onclick="sendMessage(this.id)">Down</button>
-			</div>
-			<div class="card">
-				<img id="ESP32-3" src="/">
-				<button id="ESP32-3-Right" onclick="sendMessage(this.id)">Right</button>
-				<button id="ESP32-3-Left" onclick="sendMessage(this.id)">Left</button>
-				<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
-				<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
-			</div> 
-			<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button>
+	<div class="container card shadow">
+		<div class="pt-3">
+			<img id="ESP32-1" class="img-fluid d-block mx-auto">
+			<!-- <button onclick="saveVideo()">
+				Save Video
+			</button> -->
+			<!--
+			<button id="ESP32-1-Right" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-1-Left" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-1-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
 			-->
+			<hr>
 		</div>
-	</main>
+		<div class="pb-3">
+			<h2 id="cam-one-temp" class="text-center">Updating Temperature...</h2>
+		</div>
+		<!--  -->
+		<!-- 
+		<div class="card">
+			<img id="ESP32-2" src="/">
+			<button id="ESP32-2-Right" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-2-Left" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-2-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-2-Down" onclick="sendMessage(this.id)">Down</button>
+		</div>
+		<div class="card">
+			<img id="ESP32-3" src="/">
+			<button id="ESP32-3-Right" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-3-Left" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
+		</div> 
+		<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button>
+		-->
+	</div>
 	<script type="text/javascript">
 		const img_1 = document.getElementById("ESP32-1");
 		// const img_2 = document.getElementById("ESP32-2");
@@ -93,7 +93,7 @@
 					var deviceName = msg.substring(0, 7);
 
 					tempString = msg.replace("cam_one_temp_", "The current temperature is ")+"°F";
-					titleString = msg.replace("cam_one_temp_", "")+"°F  - Blueberry Client";
+					titleString = msg.replace("cam_one_temp_", "")+"°F  - Blueberry Pi Server";
 					cam_one_temp_html.innerHTML = tempString;
 					title_temp.innerHTML = titleString;
 					console.log(tempString);
@@ -140,7 +140,7 @@
 				cam_one_temp_html.innerHTML = tempString;
 	            console.log(tempString);
 	            
-	            titleString = `${data['temperatureBuffer']['cam_one']}°F - Blueberry Client`;
+	            titleString = `${data['temperatureBuffer']['cam_one']}°F - Blueberry Pi Server`;
 				title_temp.innerHTML = titleString;
 	        } catch (error) {
 	            console.error('Error:', error);
