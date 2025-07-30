@@ -40,3 +40,17 @@
 	margin-left: 1rem;
 	margin-right: 1rem;
 }
+
+#sidebar {
+  transition: width 0.3s;
+  width: 250px;
+}
+#sidebar.collapsed {
+  width: 60px;
+}
+#sidebar .btn-label {
+  display: inline-block;
+}
+#sidebar.collapsed .btn-label {
+  display: none;
+}
