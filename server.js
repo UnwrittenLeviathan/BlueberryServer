@@ -11,6 +11,9 @@ const { PassThrough } = require("stream");
 const phpExpress  = require('php-express')({
   binPath: 'php'    // path to your PHP CLI
 });
+const fetch = require('node-fetch');
+const cors = require('cors');
+const { JSDOM } = require('jsdom');
 
 
 require('dotenv').config();
@@ -366,6 +369,7 @@ wsServer.on('connection', (ws, req)=>{
 });
 
 app.use(express.static("."));
+app.use(cors());
 app.use(bodyParser.json());
 // Register .php as a view engine
 app.engine('php', phpExpress.engine);
@@ -445,6 +449,106 @@ app.post('/save-video', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+app.get('/proxy', async (req, res) => {
+  const { url } = req.query;
+  try {
+    new URL(url);
+  } catch {
+    return res.status(400).json({ error: "Invalid URL" });
+  }
+
+  try {
+    const response = await fetch(url);
+    const html = await response.text();
+    const dom = new JSDOM(html);
+    const nutritionDiv = dom.window.document.getElementById('primaryNutrition');
+    const vitaminDiv = dom.window.document.getElementById('vitaminNutrition');
+    const servingSizeDt = dom.window.document.querySelector('.serving-size dt');
+    const servingSizeDd = dom.window.document.querySelector('.serving-size dd');
+    const servingsPer = dom.window.document.querySelector('.servings-per');
+    const productName = dom.window.document.querySelector('.product-name');
+
+    const servingInfo = {};
+
+    const results = [];
+
+    if(productName) {
+        results.push({
+            product: productName.textContent.trim(),
+        })
+    }
+
+    if (servingsPer) {
+        results.push({
+            nutrient: "Total Servings",
+            amount: servingsPer.textContent.trim(),
+        });
+    }
+
+    if (servingSizeDt && servingSizeDd) {
+        results.push({
+            nutrient: servingSizeDt.textContent.trim(),
+            amount: servingSizeDd.textContent.trim()
+        });
+    }
+
+    if (nutritionDiv) {
+      const children = Array.from(nutritionDiv.children);
+
+      children.forEach(child => {
+        // Skip if this child is contained in vitaminNutrition
+        if (vitaminDiv && vitaminDiv.contains(child)) return;
+
+        const text = child.textContent.trim();
+        if (!text) return;
+
+        const nutrientMatch = text.match(/([\w\s]+)\n\s*(\d+[\d\.\w]*)\n\s*(\d+%)/);
+        if (nutrientMatch) {
+          results.push({
+            nutrient: nutrientMatch[1].trim(),
+            amount: nutrientMatch[2].trim(),
+            // dailyValue: nutrientMatch[3].trim(),
+          });
+          return;
+        }
+
+        const simpleMatch = text.match(/([\w\s]+)\n\s*(\d+[\d\.\w]*)$/);
+        if (simpleMatch) {
+          results.push({
+            nutrient: simpleMatch[1].trim(),
+            amount: simpleMatch[2].trim(),
+            // dailyValue: null,
+          });
+        }
+      });
+    }
+
+    if (vitaminDiv) {
+        const dlElements = vitaminDiv.querySelectorAll('dl');
+
+        dlElements.forEach(dl => {
+          const dt = dl.querySelector('dt');
+          const dd = dl.querySelector('dd');
+
+          if (dt && dd) {
+            results.push({
+              nutrient: dt.textContent.trim(),
+              amount: dd.textContent.trim()
+            });
+          }
+        });
+    }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: "Error fetching or parsing content" });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Proxy running on http://localhost:${PORT}`));
+
 app.listen(HTTP_PORT, ()=> console.log('HTTP server listening at '+HTTP_PORT));
 
 function gracefulShutdown() {

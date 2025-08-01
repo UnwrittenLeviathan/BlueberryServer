@@ -1,6 +1,7 @@
 CREATE TABLE `recipe` (
   `id` integer PRIMARY KEY,
   `name` varchar(255),
+  `servings` integer,
   `created_at` timestamp
 );
 
