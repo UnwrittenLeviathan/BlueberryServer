@@ -6,7 +6,7 @@ const fs = require('fs');
 const cjson = require('compressed-json');
 const { spawn } = require('child_process');
 const dgram = require('dgram');
-const mysql = require('mysql');
+const mysql = require('mysql2');
 const { PassThrough } = require("stream");
 const phpExpress  = require('php-express')({
   binPath: 'php'    // path to your PHP CLI
@@ -449,6 +449,22 @@ app.post('/save-video', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+app.post('/add-food', async (req, res) => {
+    try {
+        // if (req.body.requestKey !== requestVideo) {
+        //     return res.status(403).json({ error: 'Unauthorized request' });
+        // }
+
+        // Simulating an async operation (e.g., database query)
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
+        // console.log(req.body)
+        response = await insertItemIfNew(req.body, 'food');
+        res.json({ response });
+    } catch (error) {
+        console.error('Server error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 app.get('/proxy', async (req, res) => {
   const { url } = req.query;
@@ -550,6 +566,37 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Proxy running on http://localhost:${PORT}`));
 
 app.listen(HTTP_PORT, ()=> console.log('HTTP server listening at '+HTTP_PORT));
+
+async function insertItemIfNew(item, tableName) {
+  try {
+    const [exists] = await db.promise().query(
+      `SELECT 1 FROM \`${tableName}\` WHERE title = ? LIMIT 1`,
+      [item.title]
+    );
+
+    if (exists.length > 0) {
+      result = `Skipped: ${item.title} already exists.`
+      console.log(result);
+      return result;
+    }
+
+    const columns = Object.keys(item);
+    const values = columns.map(col => item[col]);
+    const placeholders = columns.map(() => '?').join(', ');
+
+    const query = `INSERT INTO \`${tableName}\` (${columns.join(', ')}) VALUES (${placeholders})`;
+    // console.log(query);
+    // console.log(values);
+    await db.promise().query(query, values);
+    console.log(`Inserted: ${item.title}`);
+    result = "Successfully added "+item.title+" into the database";
+    return result;
+  } catch (err) {
+    console.error(`Error inserting ${item.title}:`, err);
+    result = "Error inserting "+item.title+" into the database: "+err;
+    return result;
+  }
+}
 
 function gracefulShutdown() {
   console.log('Shutting down gracefully...');

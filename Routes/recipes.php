@@ -1,6 +1,6 @@
 <!-- 
   Plans:
-    - Add in functionality to add food
+    - Add in functionality to add non-hannaford food items, ie add in dropdown to select which nutrient to add, then append, and repeat
     - Add functionality to add fridges
     - Add functionality to when opening the form to create a new recipe, grab all available food from databse asynchronously and put it in cache
     - Add functionality to add food when adding a recipe
@@ -14,9 +14,19 @@
 </head>
 <body>
 	<?php include 'body-header.php'; ?>
+  <div id="hiddenLink" style="display: none;">
+    <a href="/"></a>
+  </div>
+  <div id="autoAlert" class="alert alert-info alert-dismissible fade position-fixed top-0 start-50 translate-middle-x mt-3" role="alert" style="z-index: 1050; display: none;">
+    <strong>Info:</strong>
+    <div id="autoAlertInfo">
+      Your action was successful!
+    </div>
+  </div>
+
 	<div class="d-flex">
 		<!-- Popup Form -->
-		<div id="recipeForm" class="position-fixed top-50 start-50 translate-middle bg-white border p-4 rounded shadow-lg popup" style="display: none; z-index: 1050; max-width: 400px;">
+		<div id="recipeForm" class="position-fixed top-50 start-50 translate-middle bg-white border p-4 rounded shadow-lg popup" style="display: none; z-index: 10; max-width: 400px; resize: both; overflow: auto;">
       <form>
         <h4 id="form-label-text" class="mb-3">Add New Recipe</h4>
 
@@ -57,42 +67,25 @@
         </div>
       </form>
     </div>
-    <div id="foodForm" class="position-fixed top-50 start-50 translate-middle bg-white border p-4 rounded shadow-lg popup" style="display: none; z-index: 1050; max-width: 400px;">
-      <form>
-        <h4 id="form-label-text" class="mb-3">Add New Food</h4>
+    <div id="foodForm" class="position-fixed top-50 start-50 translate-middle bg-white border p-4 rounded shadow-lg popup" style="display: none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80%;">
+      <form id="addFood">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 id="form-label-text" class="mb-0">Add New Food</h4>
+          <button type="button" class="btn btn-danger" id="removeFoodFields" style="display: none;">
+            Remove Fields
+          </button>
+        </div>
 
-        <!-- Page 1 -->
-        <div id="formPage1">
+        <div id="foodDiv">
           <div class="mb-3 d-flex align-items-center flex-nowrap" style="max-width: 100%;">
-            <label for="hannaford-link" class="form-label me-2 mb-0 text-nowrap" style="width: 140px;">Hannaford Link</label>
-            <input type="text" class="form-control" id="hannaford-link" name="hannaford-link" required style="width: 100%;">
+            <label for="foodItem" class="form-label me-2 mb-0 text-nowrap" style="width: 140px;">Link or Food Name:</label>
+            <input type="text" class="form-control" id="foodItem" name="foodItem" required style="width: 100%;">
           </div>
-
-          <!-- <div class="mb-3 d-flex align-items-center flex-nowrap" style="max-width: 100%;">
-            <label for="serving" class="form-label me-2 mb-0 text-nowrap" style="width: 140px;">Servings</label>
-            <input type="text" class="form-control" id="serving" name="serving" required style="width: 100%;">
-          </div> -->
+          <hr id="foodRule" class="hr-blurry my-3">
 
           <div class="d-flex justify-content-between">
             <button type="button" class="btn btn-secondary" onclick="closeForm('foodForm')">Close</button>
-            <button type="button" class="btn btn-primary" onclick="showPage('foodForm', 2)">Next</button>
-          </div>
-        </div>
-
-        <!-- Page 2 -->
-        <div id="formPage2" style="display: none;">
-          <div class="mb-3 d-flex align-items-center flex-nowrap" style="max-width: 100%;">
-            <label for="ingredients" class="form-label me-2 mb-0 text-nowrap" style="width: 140px;">Ingredients</label>
-            <input type="text" class="form-control" id="ingredients" name="ingredients" required style="width: 100%;">
-          </div>
-
-          <div class="mb-3 d-flex align-items-center flex-nowrap" style="max-width: 100%;">
-            <label for="prepTime" class="form-label me-2 mb-0 text-nowrap" style="width: 140px;">Prep Time</label>
-            <input type="text" class="form-control" id="prepTime" name="prepTime" required style="width: 100%;">
-          </div>
-
-          <div class="d-flex justify-content-between">
-            <button type="button" class="btn btn-secondary" onclick="showPage('foodForm', 1)">Back</button>
+            <!-- <button type="button" class="btn btn-primary" onclick="showPage('foodForm', 2)">Next</button> -->
             <button type="submit" class="btn btn-success">Submit</button>
           </div>
         </div>
@@ -116,8 +109,7 @@
 
       <button class="btn btn-success mb-2">
         <i class="bi bi-gear"></i>
-        <span class="btn-label">Add Fridge</span>
-        <!-- Update to have existing fridge be the option -->
+        <span class="btn-label">Add Food to Fridge</span>
       </button>
     </div>
 
@@ -217,22 +209,31 @@
       }
     }
 
-
-
 	  const sidebar = document.getElementById('sidebar');
     const toggleBtn = document.getElementById('toggleBtn');
+    const removeButton = document.getElementById('removeFoodFields');
+    const alertEl = document.getElementById("autoAlert");
+    const infoBox = document.getElementById('autoAlertInfo');
 
     toggleBtn.addEventListener('click', () => {
       sidebar.classList.toggle('collapsed');
       if(toggleBtn.innerHTML.includes('☰')) {
-      	toggleBtn.innerHTML = '>'
+        toggleBtn.innerHTML = '>'
       } else {
-      	toggleBtn.innerHTML = '☰'
+        toggleBtn.innerHTML = '☰'
       }
     });
 
-    const linkInput = document.getElementById("hannaford-link");
+    const linkInput = document.getElementById("foodItem");
     let debounceTimer;
+
+    removeButton.addEventListener('click', () => {
+      document.querySelectorAll('.auto-scraped').forEach(element => {
+        element.remove();
+      });
+      removeButton.style.display = "none";
+      linkInput.value = "";
+    });
 
     linkInput.addEventListener("input", (event) => {
       clearTimeout(debounceTimer);
@@ -242,6 +243,9 @@
         // Check if input is empty
         if (!value) {
           console.log("Input cleared. Skipping fetch.");
+          document.querySelectorAll('.auto-scraped').forEach(element => {
+            element.remove();
+          });
           return;
         }
 
@@ -250,8 +254,15 @@
           new URL(value);
         } catch {
           console.log("Invalid URL format. Skipping fetch.");
+          // document.querySelectorAll('.auto-scraped').forEach(element => {
+          //   element.remove();
+          // });
           return;
         }
+
+        document.querySelectorAll('.auto-scraped').forEach(element => {
+          element.remove();
+        });
 
         fetch('/proxy?url=' + encodeURIComponent(event.target.value))
           .then(res => res.json())
@@ -265,15 +276,143 @@
         return;
       }
 
-      console.log("Nutrition Facts:", nutritionArray);
+      // console.log("Nutrition Facts:", nutritionArray);
       // TODO: Insert into DOM as needed
+      // console.log(nutritionArray[0]['product']);
+      const parentDiv = document.getElementById('foodForm');
+      const formContainer = parentDiv.querySelector('#foodDiv');
+      const referenceChild = formContainer.querySelector('#foodRule');
+      const link = document.querySelector("#hiddenLink a");
+
+
+      link.href = linkInput.value;
+      linkInput.value = nutritionArray[0]['product'];
+      removeButton.style.display = 'inline-block';
+
+      nutritionArray.filter(item => item.nutrient).reverse().forEach(item => {
+        const numeric = (item.amount.match(/[\d.]+/) || [''])[0];
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-3 d-flex align-items-center flex-nowrap auto-scraped';
+        wrapper.style.maxWidth = '100%';
+
+        const label = document.createElement('label');
+        const fieldId = item.nutrient.toLowerCase().replace(/\s+/g, '-').replace(/-/g, "_");
+        label.setAttribute('for', fieldId);
+        label.className = 'form-label me-2 mb-0 text-nowrap auto-scraped';
+        label.style.width = '140px';
+        label.textContent = item.nutrient.replace(/-/g, "_");
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = fieldId;
+        input.name = fieldId;
+        input.required = false;
+        input.className = 'form-control auto-scraped';
+        input.style.width = '100%';
+        input.value = numeric;
+
+        wrapper.append(label, input);
+
+        if (referenceChild && referenceChild.nextSibling) {
+          formContainer.insertBefore(wrapper, referenceChild.nextSibling);
+        } else {
+          // If there's no next sibling, just append at the end
+          formContainer.appendChild(wrapper);
+        }
+
+        if (item.nutrient === "Serving Size") {
+          const fullText = item.amount.replace(/[^a-zA-Z\s]/g, '').replace(/-/g, "_").trim();
+          const extraWrapper = document.createElement('div');
+          extraWrapper.className = 'mb-3 d-flex align-items-center flex-nowrap auto-scraped';
+          extraWrapper.style.maxWidth = '100%';
+
+          const extraLabel = document.createElement('label');
+          const extraId = 'serving_unit';
+          extraLabel.setAttribute('for', extraId);
+          extraLabel.className = 'form-label me-2 mb-0 text-nowrap auto-scraped';
+          extraLabel.style.width = '140px';
+          extraLabel.textContent = "Serving Unit";
+
+          const extraInput = document.createElement('input');
+          extraInput.type = 'text';
+          extraInput.id = extraId;
+          extraInput.name = extraId;
+          extraInput.className = 'form-control auto-scraped';
+          extraInput.style.width = '100%';
+          extraInput.value = fullText;
+
+          extraWrapper.append(extraLabel, extraInput);
+          formContainer.insertBefore(extraWrapper, wrapper.nextSibling);
+        }
+      });
     }
 
-  </script>
+    document.getElementById("addFood").addEventListener("submit", function(e) {
+      e.preventDefault(); // Stop default form behavior
 
-  <!-- Bootstrap 5 JS bundle (optional) -->
-  <script
-    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
-  ></script>
+      const formData = new FormData(this);
+      const jsonData = {};
+
+      formData.forEach((value, key) => {
+        if(key == 'foodItem') {
+          key = 'title';
+        } else if(key.toLowerCase().includes('folate') || key.toLowerCase().includes('folic')) {
+          key = 'folate_folic_acid';
+        } else if (value == '' || value == null) {
+          return;
+        }
+        jsonData[key] = value;
+      });
+
+      // console.log(jsonData);
+
+      fetch("/add-food", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(jsonData)
+      })
+      .then(response => response.json())
+      .then(data => {
+        // console.log(data.response);
+        // Show the alert
+        if(data.response.includes("Success")) {
+          alertEl.classList.add("alert-info");
+          alertEl.classList.remove("alert-danger");
+          infoBox.textContent = data.response;
+          document.querySelectorAll('.auto-scraped').forEach(element => {
+            element.remove();
+          });
+          removeButton.style.display = "none";
+          linkInput.value = "";
+          closeForm('foodForm');
+        } else {
+          alertEl.classList.remove("alert-info");
+          alertEl.classList.add("alert-danger");
+          infoBox.textContent = data.response;
+        }
+
+        alertEl.style.display = "block";
+        alertEl.classList.add("show");
+
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+          alertEl.classList.remove("show");
+          alertEl.classList.add("hide");
+          setTimeout(() => {
+            alertEl.style.display = "none";
+            alertEl.classList.remove("hide");
+          }, 500); // Delay to finish transition
+        }, 5000);
+      })
+      .catch(error => {
+        console.error("Error:", error);
+      });
+    });
+
+
+  </script>
 </body>
 </html>

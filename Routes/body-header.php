@@ -1,44 +1,42 @@
-<nav class="navbar navbar-expand-md border-bottom bg-primary mb-3">
+<nav class="navbar navbar-expand-md bg-primary border-bottom mb-3 position-relative">
   <div class="container-fluid">
 
-    <!-- Collapse button (visible on sm/md) -->
-    <button
-      class="navbar-toggler me-3"
-      type="button"
-      data-bs-toggle="collapse"
-      data-bs-target="#navButtons"
-      aria-controls="navButtons"
-      aria-expanded="false"
-      aria-label="Toggle navigation"
-    >
+    <!-- collapse button (left on mobile) -->
+    <button class="navbar-toggler ms-2 me-2 my-2" type="button" data-bs-toggle="collapse" data-bs-target="#navButtons" aria-controls="navButtons" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
 
-    <!-- Left-side buttons -->
+    <!-- left-aligned nav buttons -->
     <div class="collapse navbar-collapse" id="navButtons">
-      <div class="navbar-nav">
-        <a class="nav-link btn btn-outline-info me-2 bg-light" href="/">Home</a>
-        <a class="nav-link btn btn-outline-secondary me-2 bg-light" href="/recipes">Recipes</a>
-        <a class="nav-link btn btn-outline-success bg-light" href="#">Button 3</a>
-      </div>
-
-      <div
-          class="position-absolute top-50 start-50 translate-middle text-center w-25"
-         >
-          <h1
-            id="pageTitle"
-            class="text-white fw-bold mb-2 pt-2"
-            style="font-size: 2.25rem;"
-          >
-            Default Title
-          </h1>
-          <hr class="border-light border-2 opacity-100 w-50 mx-auto m-0 pt-3" />
-        </div>
+      <ul class="navbar-nav flex-row">
+        <li class="nav-item p-0 me-2">
+          <button class="btn nav-btn text-bold d-flex justify-content-center align-items-center" 
+                  onclick="location.href='/'" style="height: 40px; width: auto;">
+            Home
+          </button>
+        </li>
+        <li class="nav-item p-0 me-2">
+          <button class="btn nav-btn text-secondary d-flex justify-content-center align-items-center" 
+                  onclick="location.href='/recipes'" style="height: 40px; width: auto;">
+            Recipes
+          </button>
+        </li>
+      </ul>
     </div>
+
+    <!-- centered title -->
+    <div class="navbar-title">
+      <h1 id="pageTitle" class="text-white fw-bold mb-0 pt-1" style="font-size:2rem;">
+        Default Title
+      </h1>
+      <div class="bg-white mx-auto mt-2" style="height: 1px; width: 20%;"></div>
     </div>
 
   </div>
 </nav>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   // Map URLs to headings
   const titles = {
