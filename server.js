@@ -484,10 +484,11 @@ app.get('/proxy', async (req, res) => {
     const servingSizeDd = dom.window.document.querySelector('.serving-size dd');
     const servingsPer = dom.window.document.querySelector('.servings-per');
     const productName = dom.window.document.querySelector('.product-name');
+    const priceItem = dom.window.document.querySelector('.product-price');
 
     const servingInfo = {};
-
     const results = [];
+    let priceValue = null;
 
     if(productName) {
         results.push({
@@ -507,6 +508,17 @@ app.get('/proxy', async (req, res) => {
             nutrient: servingSizeDt.textContent.trim(),
             amount: servingSizeDd.textContent.trim()
         });
+    }
+
+    if (priceItem) {
+      const regularPrice = priceItem.querySelector('.price').textContent.trim();
+
+      if (regularPrice) {
+        results.push({
+            nutrient: "Price",
+            amount: regularPrice,
+        });
+      }
     }
 
     if (nutritionDiv) {

@@ -1,4 +1,4 @@
-<nav class="navbar navbar-expand-md bg-primary border-bottom mb-3 position-relative">
+<nav class="navbar navbar-expand-md bg-primary border-bottom mb-0 position-relative">
   <div class="container-fluid">
 
     <!-- collapse button (left on mobile) -->

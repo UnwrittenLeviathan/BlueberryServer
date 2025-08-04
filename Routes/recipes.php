@@ -1,12 +1,3 @@
-<!-- 
-  Plans:
-    - Add in functionality to add non-hannaford food items, ie add in dropdown to select which nutrient to add, then append, and repeat
-    - Add functionality to add fridges
-    - Add functionality to when opening the form to create a new recipe, grab all available food from databse asynchronously and put it in cache
-    - Add functionality to add food when adding a recipe
-    - Add functionality to functions of showing pages/ forms for a variable that relates to which form to be passed.
- -->
-
 <!DOCTYPE html>
 <html lang="en" translate="no">
 <head>
@@ -14,9 +5,6 @@
 </head>
 <body>
 	<?php include 'body-header.php'; ?>
-  <div id="hiddenLink" style="display: none;">
-    <a href="/"></a>
-  </div>
   <div id="autoAlert" class="alert alert-info alert-dismissible fade position-fixed top-0 start-50 translate-middle-x mt-3" role="alert" style="z-index: 1050; display: none;">
     <strong>Info:</strong>
     <div id="autoAlertInfo">
@@ -85,7 +73,6 @@
 
           <div class="d-flex justify-content-between">
             <button type="button" class="btn btn-secondary" onclick="closeForm('foodForm')">Close</button>
-            <!-- <button type="button" class="btn btn-primary" onclick="showPage('foodForm', 2)">Next</button> -->
             <button type="submit" class="btn btn-success">Submit</button>
           </div>
         </div>
@@ -104,7 +91,6 @@
       <button class="btn btn-secondary mb-2" onclick="openForm('foodForm')">
         <i class="bi bi-person"></i>
         <span class="btn-label">Add New Food Item</span>
-        <!-- Add functionality to webscrape from hannaford website -->
       </button>
 
       <button class="btn btn-success mb-2">
@@ -114,11 +100,16 @@
     </div>
 
     <!-- Page Content -->
+    <div class="container-fluid h-100 d-flex justify-content-start align-items-start">
+      
+    </div>
+
     <div class="flex-grow-1 p-4 my-4" style="width: 90%; margin: 0 auto;">
       <div class="row" id="itemsRow">
 	      <!-- JS will inject columns + buttons here -->
 	    </div>
     </div>
+
 	</div>
 
   <script>
@@ -254,9 +245,6 @@
           new URL(value);
         } catch {
           console.log("Invalid URL format. Skipping fetch.");
-          // document.querySelectorAll('.auto-scraped').forEach(element => {
-          //   element.remove();
-          // });
           return;
         }
 
@@ -266,7 +254,13 @@
 
         fetch('/proxy?url=' + encodeURIComponent(event.target.value))
           .then(res => res.json())
-          .then(data => renderNutrition(data));
+          .then(data => {
+              data.push({
+                nutrient: 'Html Link',
+                amount: value,
+              });
+            renderNutrition(data);
+          });
       }, 800);
     });
 
@@ -276,28 +270,26 @@
         return;
       }
 
-      // console.log("Nutrition Facts:", nutritionArray);
-      // TODO: Insert into DOM as needed
-      // console.log(nutritionArray[0]['product']);
       const parentDiv = document.getElementById('foodForm');
       const formContainer = parentDiv.querySelector('#foodDiv');
       const referenceChild = formContainer.querySelector('#foodRule');
-      const link = document.querySelector("#hiddenLink a");
 
-
-      link.href = linkInput.value;
       linkInput.value = nutritionArray[0]['product'];
       removeButton.style.display = 'inline-block';
 
       nutritionArray.filter(item => item.nutrient).reverse().forEach(item => {
-        const numeric = (item.amount.match(/[\d.]+/) || [''])[0];
-
+        let numeric = '';
         const wrapper = document.createElement('div');
         wrapper.className = 'mb-3 d-flex align-items-center flex-nowrap auto-scraped';
         wrapper.style.maxWidth = '100%';
 
         const label = document.createElement('label');
         const fieldId = item.nutrient.toLowerCase().replace(/\s+/g, '-').replace(/-/g, "_");
+        if(fieldId.includes("html")) {
+          numeric = item.amount;
+        } else {
+          numeric = (item.amount.match(/[\d.]+/) || [''])[0];
+        }
         label.setAttribute('for', fieldId);
         label.className = 'form-label me-2 mb-0 text-nowrap auto-scraped';
         label.style.width = '140px';
@@ -365,8 +357,6 @@
         jsonData[key] = value;
       });
 
-      // console.log(jsonData);
-
       fetch("/add-food", {
         method: "POST",
         headers: {
@@ -376,7 +366,6 @@
       })
       .then(response => response.json())
       .then(data => {
-        // console.log(data.response);
         // Show the alert
         if(data.response.includes("Success")) {
           alertEl.classList.add("alert-info");
@@ -387,7 +376,6 @@
           });
           removeButton.style.display = "none";
           linkInput.value = "";
-          closeForm('foodForm');
         } else {
           alertEl.classList.remove("alert-info");
           alertEl.classList.add("alert-danger");
@@ -411,8 +399,6 @@
         console.error("Error:", error);
       });
     });
-
-
   </script>
 </body>
 </html>
