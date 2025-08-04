@@ -67,6 +67,7 @@ db.connect((err) => {
 });
 
 const queryTemp = 'SELECT * FROM temperature ORDER BY timestamp DESC LIMIT 1';
+const queryFood = 'SELECT * FROM food ORDER BY title COLLATE utf8mb4_general_ci ASC';
 db.query(queryTemp, (err, results) => {
     if (err) {
         console.error('Error fetching data:', err);
@@ -465,7 +466,23 @@ app.post('/add-food', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+app.get('/get-food', async (req, res) => {
+    try {
+        const foodItems = await new Promise((resolve, reject) => {
+          db.query(queryFood, (err, results) => {
+            if (err) {
+              return reject(err);
+            }
+            resolve(results);
+          });
+        });
 
+        res.json({ foodItems });
+      } catch (error) {
+        console.error('Server error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+});
 app.get('/proxy', async (req, res) => {
   const { url } = req.query;
   try {

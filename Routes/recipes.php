@@ -100,19 +100,100 @@
     </div>
 
     <!-- Page Content -->
-    <div class="container-fluid h-100 d-flex justify-content-start align-items-start">
-      
+    <div id="searchDropdown" class="dropdown m-3" style="display: none;">
+      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="dropdownBtn">
+        Select Item
+      </button>
+
+
+      <div class="custom-dropdown" id="dropdownContainer" style="display:none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80%;">
+        <input type="text" class="form-control mb-2" id="searchInput" placeholder="Search items..." style="position: sticky; top: 0; z-index: 20; background-color: white;">
+        <ul id="dropdownMenu" class="list-group">
+          <!-- Filtered items will appear here -->
+        </ul>
+      </div>
+
     </div>
 
-    <div class="flex-grow-1 p-4 my-4" style="width: 90%; margin: 0 auto;">
-      <div class="row" id="itemsRow">
-	      <!-- JS will inject columns + buttons here -->
-	    </div>
-    </div>
 
 	</div>
 
   <script>
+    let foodDBItems;
+    function getFoodDB() {
+      foodDBItems = [];
+      fetch('/get-food')
+        .then(response => response.json())
+        .then(data => {
+          data.foodItems.forEach( food => {
+            foodDBItems.push(food);
+          });
+        })
+        .catch(error => {
+          console.error('Error fetching data:', error);
+        });
+    }
+    window.addEventListener('DOMContentLoaded', () => {
+      getFoodDB();
+      document.getElementById('searchDropdown').style.display = 'block';
+    });
+
+    const dropdownBtn = document.getElementById('dropdownBtn');
+    const dropdownContainer = document.getElementById('dropdownContainer');
+    const searchInput = document.getElementById('searchInput');
+    const dropdownMenu = document.getElementById('dropdownMenu');
+
+    let preventBlur = false;
+
+    searchInput.addEventListener('blur', () => {
+      if (!preventBlur) {
+        dropdownBtn.style.display = 'inline-block';
+        dropdownContainer.style.display = 'none';
+      }
+      preventBlur = false; // Reset after blur fires
+    });
+
+    dropdownBtn.addEventListener('click', () => {
+      dropdownBtn.style.display = 'none';
+      dropdownContainer.style.display = 'block';
+      searchInput.focus();
+      populateDropdown(foodDBItems);
+    });
+
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase();
+      const filtered = foodDBItems.filter(item => item.title.toLowerCase().includes(query));
+      populateDropdown(filtered);
+    });
+
+
+    function populateDropdown(list) {
+      dropdownMenu.innerHTML = '';
+      if (list.length === 0) {
+        dropdownMenu.innerHTML = '<li class="list-group-item text-muted">No results</li>';
+        return;
+      }
+      list.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = item.title;
+        li.style.cursor = 'pointer';
+
+        li.addEventListener('mousedown', () => {
+          preventBlur = true; // Prevent blur from hiding dropdown
+        });
+
+        li.addEventListener('click', () => {
+          dropdownBtn.textContent = item.title;
+          dropdownBtn.style.display = 'inline-block';
+          dropdownContainer.style.display = 'none';
+          // console.log(item);
+        });
+
+        dropdownMenu.appendChild(li);
+      });
+    }
+
     // Your list of items
     const items = [];
 
@@ -166,7 +247,6 @@
 		    });
 		  }
 		});
-
 
     function openForm(formID) {
       const popup = document.getElementById(formID);
@@ -376,6 +456,7 @@
           });
           removeButton.style.display = "none";
           linkInput.value = "";
+          getFoodDB();
         } else {
           alertEl.classList.remove("alert-info");
           alertEl.classList.add("alert-danger");
