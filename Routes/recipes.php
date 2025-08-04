@@ -104,9 +104,7 @@
       <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="dropdownBtn">
         Select Item
       </button>
-
-
-      <div class="custom-dropdown" id="dropdownContainer" style="display:none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80%;">
+      <div class="custom-dropdown" id="dropdownContainer" style="display:none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80vh;">
         <input type="text" class="form-control mb-2" id="searchInput" placeholder="Search items..." style="position: sticky; top: 0; z-index: 20; background-color: white;">
         <ul id="dropdownMenu" class="list-group">
           <!-- Filtered items will appear here -->
@@ -119,6 +117,7 @@
 	</div>
 
   <script>
+    //Clean Things up!
     let foodDBItems;
     function getFoodDB() {
       foodDBItems = [];
@@ -437,6 +436,32 @@
         jsonData[key] = value;
       });
 
+      try {
+        new URL(jsonData.title);
+        // If it's a valid URL, force an error to hit the catch block
+        throw new Error("Valid URL found — forcing failure.");
+      } catch (err) {
+        if(err.message == "Valid URL found — forcing failure.") {
+          alertEl.classList.remove("alert-info");
+          alertEl.classList.add("alert-danger");
+          infoBox.textContent = "Wait for the url to resolve before submitting.";
+
+          alertEl.style.display = "block";
+          alertEl.classList.add("show");
+
+          // Auto-close after 3 seconds
+          setTimeout(() => {
+            alertEl.classList.remove("show");
+            alertEl.classList.add("hide");
+            setTimeout(() => {
+              alertEl.style.display = "none";
+              alertEl.classList.remove("hide");
+            }, 500); // Delay to finish transition
+          }, 5000);
+          return;
+        }
+      }
+      
       fetch("/add-food", {
         method: "POST",
         headers: {
