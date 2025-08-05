@@ -604,6 +604,7 @@ async function insertItemIfNew(item, tableName) {
     );
 
     if (exists.length > 0) {
+      //Add functionality to edit if it exists
       result = `Skipped: ${item.title} already exists.`
       console.log(result);
       return result;

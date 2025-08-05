@@ -125,6 +125,8 @@
 	</div>
 
   <script>
+    //Add: button next to items to remove just that one, like a red X
+    //move food addition to recipe making
     let foodDBItems;
     let debounceTimer;
     let preventBlur = false;
@@ -140,7 +142,7 @@
     const nutritionSearchInput = document.getElementById('nutritionSearchInput');
     const nutritionDropdownMenu = document.getElementById('nutritionDropdownMenu');
     
-    const linkInput = document.getElementById("foodItem");
+    const foodLinkInput = document.getElementById("foodItem");
     const sidebar = document.getElementById('sidebar');
     const toggleBtn = document.getElementById('toggleBtn');
     const clearFoodFields = document.getElementById('removeFoodFields');
@@ -153,7 +155,7 @@
     const nutritionList = [
       {title: "Total Servings"},
       {title: "Serving Size"},
-      {title: "Serving Units"},
+      {title: "Serving Unit"},
       {title: "Calories"},
       {title: "Total Fat"},
       {title: "Saturated Fat"},
@@ -199,7 +201,7 @@
     //Change this to be in it's correct spot, when adding recipes, and learn how to cache the results.
     window.addEventListener('DOMContentLoaded', () => {
       getFoodDB();
-      foodSearchDropdown.style.display = 'block';
+      // foodSearchDropdown.style.display = 'block';
     });
 
     document.addEventListener("keydown", function(event) {
@@ -217,19 +219,21 @@
       nutritionDropdownBtn.style.display = 'none';
       nutritionDropdownContainer.style.display = 'block';
       nutritionSearchInput.focus();
-      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped'))
-        .map(input => input.id)
+      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped, input.auto-scraped'))
+        .map(input => input.id.toLowerCase().replace(/ /g, "_"))
         .filter(id => id); // filters out undefined or empty IDs
-      const filtered = nutritionList.filter(item => !inputIds.includes(item.title));
+      // console.log(inputIds.length);
+      // if(clearFoodFields.style.display == 'none' && inputIds.length > 0) clearFoodFields.style.display = "inline-block";
+      const filtered = nutritionList.filter(item => !inputIds.includes(item.title.toLowerCase().replace(/ /g, "_")));
       populateDropdown(filtered, nutritionDropdownMenu, nutritionDropdownBtn, nutritionDropdownContainer);
     });
 
     nutritionSearchInput.addEventListener('input', () => {
       const query = nutritionSearchInput.value.toLowerCase();
-      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped'))
-        .map(input => input.id)
+      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped, input.auto-scraped'))
+        .map(input => input.id.toLowerCase().replace(/ /g, "_"))
         .filter(id => id);
-      const filtered = nutritionList.filter(item => item.title.toLowerCase().includes(query)).filter(item => !inputIds.includes(item.title));
+      const filtered = nutritionList.filter(item => item.title.toLowerCase().includes(query)).filter(item => !inputIds.includes(item.title.toLowerCase().replace(/ /g, "_")));
       populateDropdown(filtered, nutritionDropdownMenu, nutritionDropdownBtn, nutritionDropdownContainer);
     });
 
@@ -307,7 +311,7 @@
             element.value = '';
           });
           clearFoodFields.style.display = "none";
-          linkInput.value = "";
+          foodLinkInput.value = "";
           getFoodDB();
         } else {
           alertEl.classList.remove("alert-info");
@@ -372,10 +376,10 @@
         element.remove();
       });
       clearFoodFields.style.display = "none";
-      linkInput.value = "";
+      foodLinkInput.value = "";
     });
 
-    linkInput.addEventListener("input", (event) => {
+    foodLinkInput.addEventListener("input", (event) => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         const value = event.target.value.trim();
@@ -424,6 +428,7 @@
         dropdownMenu.innerHTML = '<li class="list-group-item text-muted">No results</li>';
         return;
       }
+
       list.forEach(item => {
         const li = document.createElement('li');
         li.className = 'list-group-item';
@@ -432,8 +437,26 @@
         li.id = item.title;
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'mb-3 d-flex align-items-center flex-nowrap manual-scraped';
+        wrapper.className = 'mb-1 d-flex align-items-center flex-nowrap manual-scraped';
         wrapper.style.maxWidth = '100%';
+
+        //<span class="text-danger" style="cursor:pointer; font-weight:bold;">&times;</span>
+        const span = document.createElement('span');
+        span.className = 'text-danger manual-scraped fs-2 text-center mb-2';
+        span.style.cursor = 'pointer';
+        span.style.fontWeight = 'bold';
+        span.innerHTML = '&times;';
+        span.addEventListener('click', () => {
+          wrapper.remove();
+          const inputIds = Array.from(document.querySelectorAll('input.manual-scraped'))
+            .map(input => input.id)
+            .filter(id => id); // filters out undefined or empty IDs
+          // console.log(inputIds.length);
+          if(clearFoodFields.style.display == 'inline-block' && inputIds.length == 0) clearFoodFields.style.display = "none";
+        });
+
+        const verticalRule = document.createElement('div');
+        verticalRule.className = 'vr';
 
         const label = document.createElement('label');
         label.setAttribute('for', item.title);
@@ -449,7 +472,7 @@
         input.className = 'form-control manual-scraped';
         input.style.width = '100%';
 
-        wrapper.append(label, input);
+        wrapper.append(span, verticalRule, label, input);
 
         li.addEventListener('mousedown', () => {
           preventBlur = true; // Prevent blur from hiding dropdown
@@ -465,6 +488,11 @@
             // If there's no next sibling, just append at the end
             formContainer.appendChild(wrapper);
           }
+          const inputIds = Array.from(document.querySelectorAll('input.manual-scraped'))
+            .map(input => input.id)
+            .filter(id => id); // filters out undefined or empty IDs
+          // console.log(inputIds.length);
+          if(clearFoodFields.style.display == 'none' && inputIds.length > 0) clearFoodFields.style.display = "inline-block";
           input.focus();
         });
 
@@ -473,6 +501,10 @@
     }
 
     function openForm(formID) {
+      const allForms = document.querySelectorAll('.popup');
+      allForms.forEach(element => {
+        element.style.display = 'none';
+      })
       const popup = document.getElementById(formID);
       if (popup) popup.style.display = "block";
     }
@@ -514,7 +546,7 @@
       const formContainer = parentDiv.querySelector('.form-container');
       const referenceChild = formContainer.querySelector('.form-divider');
 
-      linkInput.value = inputArray[0]['product'];
+      foodLinkInput.value = inputArray[0]['product'];
       clearFoodFields.style.display = 'inline-block';
 
       inputArray.filter(item => item.nutrient).reverse().forEach(item => {
