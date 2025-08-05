@@ -56,22 +56,33 @@
       </form>
     </div>
     <div id="foodForm" class="position-fixed top-50 start-50 translate-middle bg-white border p-4 rounded shadow-lg popup" style="display: none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80%;">
-      <form id="addFood">
+      <form id="addFoodForm">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h4 id="form-label-text" class="mb-0">Add New Food</h4>
           <button type="button" class="btn btn-danger" id="removeFoodFields" style="display: none;">
-            Remove Fields
+            Clear Fields
           </button>
         </div>
 
-        <div id="foodDiv">
+        <div class="form-container">
           <div class="mb-3 d-flex align-items-center flex-nowrap" style="max-width: 100%;">
             <label for="foodItem" class="form-label me-2 mb-0 text-nowrap" style="width: 140px;">Link or Food Name:</label>
             <input type="text" class="form-control" id="foodItem" name="foodItem" required style="width: 100%;">
           </div>
-          <hr id="foodRule" class="hr-blurry my-3">
+          <hr class="hr-blurry my-3 form-divider">
+          <div id="nutritionDropdown" class="dropdown mr-3 mb-3 hide-on-update">
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="nutritionDropdownBtn" style="width: 100%;">
+              Add Nutrition Info
+            </button>
+            <div class="custom-nutrition-dropdown" id="nutritionDropdownContainer" style="display: none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80vh;">
+              <input type="text" class="form-control mb-2 ignore" id="nutritionSearchInput" placeholder="Search items..." style="position: sticky; top: 0; z-index: 20; background-color: white;">
+              <ul id="nutritionDropdownMenu" class="list-group">
+                <!-- Filtered items will appear here -->
+              </ul>
+            </div>
+          </div>
 
-          <div class="d-flex justify-content-between">
+          <div class="d-flex justify-content-between" id="close-submit">
             <button type="button" class="btn btn-secondary" onclick="closeForm('foodForm')">Close</button>
             <button type="submit" class="btn btn-success">Submit</button>
           </div>
@@ -100,73 +111,314 @@
     </div>
 
     <!-- Page Content -->
-    <div id="searchDropdown" class="dropdown m-3" style="display: none;">
-      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="dropdownBtn">
+    <div id="foodSearchDropdown" class="dropdown m-3" style="display: none;">
+      <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="foodDropdownBtn">
         Select Item
       </button>
-      <div class="custom-dropdown" id="dropdownContainer" style="display:none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80vh;">
-        <input type="text" class="form-control mb-2" id="searchInput" placeholder="Search items..." style="position: sticky; top: 0; z-index: 20; background-color: white;">
-        <ul id="dropdownMenu" class="list-group">
+      <div class="custom-dropdown" id="foodDropdownContainer" style="display:none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80vh;">
+        <input type="text" class="form-control mb-2" id="foodSearchInput" placeholder="Search items..." style="position: sticky; top: 0; z-index: 20; background-color: white;">
+        <ul id="foodDropdownMenu" class="list-group">
           <!-- Filtered items will appear here -->
         </ul>
       </div>
-
     </div>
-
-
 	</div>
 
   <script>
-    //Clean Things up!
     let foodDBItems;
-    function getFoodDB() {
-      foodDBItems = [];
-      fetch('/get-food')
-        .then(response => response.json())
-        .then(data => {
-          data.foodItems.forEach( food => {
-            foodDBItems.push(food);
-          });
-        })
-        .catch(error => {
-          console.error('Error fetching data:', error);
-        });
-    }
-    window.addEventListener('DOMContentLoaded', () => {
-      getFoodDB();
-      document.getElementById('searchDropdown').style.display = 'block';
-    });
-
-    const dropdownBtn = document.getElementById('dropdownBtn');
-    const dropdownContainer = document.getElementById('dropdownContainer');
-    const searchInput = document.getElementById('searchInput');
-    const dropdownMenu = document.getElementById('dropdownMenu');
-
+    let debounceTimer;
     let preventBlur = false;
 
-    searchInput.addEventListener('blur', () => {
+    const foodDropdownBtn = document.getElementById('foodDropdownBtn');
+    const foodDropdownContainer = document.getElementById('foodDropdownContainer');
+    const foodSearchInput = document.getElementById('foodSearchInput');
+    const foodDropdownMenu = document.getElementById('foodDropdownMenu');
+    const foodSearchDropdown = document.getElementById('foodSearchDropdown')
+
+    const nutritionDropdownBtn = document.getElementById('nutritionDropdownBtn');
+    const nutritionDropdownContainer = document.getElementById('nutritionDropdownContainer');
+    const nutritionSearchInput = document.getElementById('nutritionSearchInput');
+    const nutritionDropdownMenu = document.getElementById('nutritionDropdownMenu');
+    
+    const linkInput = document.getElementById("foodItem");
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('toggleBtn');
+    const clearFoodFields = document.getElementById('removeFoodFields');
+
+    const alertEl = document.getElementById("autoAlert");
+    const infoBox = document.getElementById('autoAlertInfo');
+    
+    const addFoodForm = document.getElementById("addFoodForm");
+
+    const nutritionList = [
+      {title: "Total Servings"},
+      {title: "Serving Size"},
+      {title: "Serving Units"},
+      {title: "Calories"},
+      {title: "Total Fat"},
+      {title: "Saturated Fat"},
+      {title: "Trans Fat"},
+      {title: "Cholesterol"},
+      {title: "Sodium"},
+      {title: "Total Carbohydrate"},
+      {title: "Dietary Fiber"},
+      {title: "Sugars"},
+      {title: "Added Sugars"},
+      {title: "Protein"},
+      {title: "Vitamin D"},
+      {title: "Calcium"},
+      {title: "Iron"},
+      {title: "Potassium"},
+      {title: "Vitamin A"},
+      {title: "Vitamin C"},
+      {title: "Vitamin E"},
+      {title: "Vitamin K"},
+      {title: "Thiamin"},
+      {title: "Riboflavin"},
+      {title: "Niacin"},
+      {title: "Vitamin B6"},
+      {title: "Folate or Folic Acid"},
+      {title: "Vitamin B12"},
+      {title: "Biotin"},
+      {title: "Phosphorus"},
+      {title: "Iodine"},
+      {title: "Magnesium"},
+      {title: "Zinc"},
+      {title: "Copper"},
+      {title: "Manganese"},
+      {title: "Chloride"},
+      {title: "Chromium"},
+      {title: "Molybdenum"},
+      {title: "Choline"},
+      {title: "Pantothenic Acid"},
+      {title: "Selenium"},
+      {title: "Price"},
+      {title: "HTML Link"}
+    ];
+
+    //Change this to be in it's correct spot, when adding recipes, and learn how to cache the results.
+    window.addEventListener('DOMContentLoaded', () => {
+      getFoodDB();
+      foodSearchDropdown.style.display = 'block';
+    });
+
+    document.addEventListener("keydown", function(event) {
+      if (event.key === "Escape") {
+        const openForms = document.querySelectorAll(".popup");
+
+        openForms.forEach(form => {
+          // You can add additional logic here if needed
+          form.style.display = "none";
+        });
+      }
+    });
+
+    nutritionDropdownBtn.addEventListener('click', () => {
+      nutritionDropdownBtn.style.display = 'none';
+      nutritionDropdownContainer.style.display = 'block';
+      nutritionSearchInput.focus();
+      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped'))
+        .map(input => input.id)
+        .filter(id => id); // filters out undefined or empty IDs
+      const filtered = nutritionList.filter(item => !inputIds.includes(item.title));
+      populateDropdown(filtered, nutritionDropdownMenu, nutritionDropdownBtn, nutritionDropdownContainer);
+    });
+
+    nutritionSearchInput.addEventListener('input', () => {
+      const query = nutritionSearchInput.value.toLowerCase();
+      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped'))
+        .map(input => input.id)
+        .filter(id => id);
+      const filtered = nutritionList.filter(item => item.title.toLowerCase().includes(query)).filter(item => !inputIds.includes(item.title));
+      populateDropdown(filtered, nutritionDropdownMenu, nutritionDropdownBtn, nutritionDropdownContainer);
+    });
+
+    nutritionSearchInput.addEventListener('blur', () => {
       if (!preventBlur) {
-        dropdownBtn.style.display = 'inline-block';
-        dropdownContainer.style.display = 'none';
+        nutritionDropdownBtn.style.display = 'inline-block';
+        nutritionDropdownContainer.style.display = 'none';
       }
       preventBlur = false; // Reset after blur fires
+      nutritionSearchInput.value = "";
     });
 
-    dropdownBtn.addEventListener('click', () => {
-      dropdownBtn.style.display = 'none';
-      dropdownContainer.style.display = 'block';
-      searchInput.focus();
-      populateDropdown(foodDBItems);
+    addFoodForm.addEventListener("submit", function(e) {
+      e.preventDefault(); // Stop default form behavior
+
+      const formData = new FormData(this);
+      const jsonData = {};
+
+      formData.forEach((value, key) => {
+        if(key == 'foodItem') {
+          key = 'title';
+        } else if(key.toLowerCase().includes('folate') || key.toLowerCase().includes('folic')) {
+          key = 'folate_folic_acid';
+        } else if (value == '' || value == null) {
+          return;
+        }
+        formatted = key.toLowerCase().replace(/ /g, "_");
+        jsonData[formatted] = value;
+      });
+
+      try {
+        new URL(jsonData.title);
+        // If it's a valid URL, force an error to hit the catch block
+        throw new Error("Valid URL found — forcing failure.");
+      } catch (err) {
+        if(err.message == "Valid URL found — forcing failure.") {
+          alertEl.classList.remove("alert-info");
+          alertEl.classList.add("alert-danger");
+          infoBox.textContent = "Wait for the url to resolve before submitting.";
+
+          alertEl.style.display = "block";
+          alertEl.classList.add("show");
+
+          // Auto-close after 3 seconds
+          setTimeout(() => {
+            alertEl.classList.remove("show");
+            alertEl.classList.add("hide");
+            setTimeout(() => {
+              alertEl.style.display = "none";
+              alertEl.classList.remove("hide");
+            }, 500); // Delay to finish transition
+          }, 5000);
+          return;
+        }
+      }
+      
+      fetch("/add-food", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(jsonData)
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Show the alert
+        if(data.response.includes("Success")) {
+          alertEl.classList.add("alert-info");
+          alertEl.classList.remove("alert-danger");
+          infoBox.textContent = data.response;
+          document.querySelectorAll('.auto-scraped').forEach(element => {
+            element.remove();
+          });
+          document.querySelectorAll('.manual-scraped').forEach(element => {
+            element.value = '';
+          });
+          clearFoodFields.style.display = "none";
+          linkInput.value = "";
+          getFoodDB();
+        } else {
+          alertEl.classList.remove("alert-info");
+          alertEl.classList.add("alert-danger");
+          infoBox.textContent = data.response;
+        }
+
+        alertEl.style.display = "block";
+        alertEl.classList.add("show");
+
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+          alertEl.classList.remove("show");
+          alertEl.classList.add("hide");
+          setTimeout(() => {
+            alertEl.style.display = "none";
+            alertEl.classList.remove("hide");
+          }, 500); // Delay to finish transition
+        }, 5000);
+      })
+      .catch(error => {
+        console.error("Error:", error);
+      });
     });
 
-    searchInput.addEventListener('input', () => {
-      const query = searchInput.value.toLowerCase();
+    foodSearchInput.addEventListener('blur', () => {
+      if (!preventBlur) {
+        foodDropdownBtn.style.display = 'inline-block';
+        foodDropdownContainer.style.display = 'none';
+      }
+      preventBlur = false; // Reset after blur fires
+      foodSearchInput.value = "";
+    });
+
+    foodDropdownBtn.addEventListener('click', () => {
+      foodDropdownBtn.style.display = 'none';
+      foodDropdownContainer.style.display = 'block';
+      foodSearchInput.focus();
+      populateDropdown(foodDBItems, foodDropdownMenu, foodDropdownBtn, foodDropdownContainer);
+    });
+
+    foodSearchInput.addEventListener('input', () => {
+      const query = foodSearchInput.value.toLowerCase();
       const filtered = foodDBItems.filter(item => item.title.toLowerCase().includes(query));
-      populateDropdown(filtered);
+      populateDropdown(filtered, foodDropdownMenu, foodDropdownBtn, foodDropdownContainer);
     });
 
+    toggleBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
+      if(toggleBtn.innerHTML.includes('☰')) {
+        toggleBtn.innerHTML = '>'
+      } else {
+        toggleBtn.innerHTML = '☰'
+      }
+    });
 
-    function populateDropdown(list) {
+    clearFoodFields.addEventListener('click', () => {
+      document.querySelectorAll('.auto-scraped').forEach(element => {
+        element.remove();
+      });
+      document.querySelectorAll('.manual-scraped').forEach(element => {
+        element.remove();
+      });
+      clearFoodFields.style.display = "none";
+      linkInput.value = "";
+    });
+
+    linkInput.addEventListener("input", (event) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const value = event.target.value.trim();
+
+        // Check if input is empty
+        if (!value) {
+          console.log("Input cleared. Skipping fetch.");
+          document.querySelectorAll('.auto-scraped').forEach(element => {
+            element.remove();
+          });
+          return;
+        }
+
+        clearFoodFields.style.display = 'inline-block';
+
+        // Check if value is a valid URL
+        try {
+          new URL(value);
+        } catch {
+          return;
+        }
+
+        document.querySelectorAll('.auto-scraped').forEach(element => {
+          element.remove();
+        });
+
+        fetch('/proxy?url=' + encodeURIComponent(event.target.value))
+          .then(res => res.json())
+          .then(data => {
+              data.push({
+                nutrient: 'Html Link',
+                amount: value,
+              });
+            renderNutrition(data);
+          });
+      }, 800);
+    });
+
+    function populateDropdown(list, dropdownMenu, dropdownBtn, dropdownContainer) {
+      const parentDiv = document.getElementById('foodForm');
+      const formContainer = parentDiv.querySelector('.form-container');
+      const referenceChild = formContainer.querySelector('.dropdown');
+
       dropdownMenu.innerHTML = '';
       if (list.length === 0) {
         dropdownMenu.innerHTML = '<li class="list-group-item text-muted">No results</li>';
@@ -177,75 +429,48 @@
         li.className = 'list-group-item';
         li.textContent = item.title;
         li.style.cursor = 'pointer';
+        li.id = item.title;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-3 d-flex align-items-center flex-nowrap manual-scraped';
+        wrapper.style.maxWidth = '100%';
+
+        const label = document.createElement('label');
+        label.setAttribute('for', item.title);
+        label.className = 'form-label me-2 mb-0 text-nowrap manual-scraped';
+        label.style.width = '140px';
+        label.textContent = item.title;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = item.title;
+        input.name = item.title;
+        input.required = false;
+        input.className = 'form-control manual-scraped';
+        input.style.width = '100%';
+
+        wrapper.append(label, input);
 
         li.addEventListener('mousedown', () => {
           preventBlur = true; // Prevent blur from hiding dropdown
         });
 
         li.addEventListener('click', () => {
-          dropdownBtn.textContent = item.title;
+          // dropdownBtn.textContent = item.title;
           dropdownBtn.style.display = 'inline-block';
           dropdownContainer.style.display = 'none';
-          // console.log(item);
+          if (referenceChild && referenceChild.nextSibling) {
+            formContainer.insertBefore(wrapper, referenceChild.nextSibling);
+          } else {
+            // If there's no next sibling, just append at the end
+            formContainer.appendChild(wrapper);
+          }
+          input.focus();
         });
 
         dropdownMenu.appendChild(li);
       });
     }
-
-    // Your list of items
-    const items = [];
-
-    const MAX_PER_COLUMN = 10;
-    const MAX_COLUMNS    = 3;
-
-    // Calculate needed columns (1–3)
-    const neededCols = Math.min(
-      MAX_COLUMNS,
-      Math.ceil(items.length / MAX_PER_COLUMN)
-    );
-
-    // Determine Bootstrap column width for md+ breakpoints
-    const mdWidth = 12 / neededCols;
-    const colClass = `col-12 col-md-${mdWidth}`;
-
-    const containerRow = document.getElementById('itemsRow');
-
-    // Build each column
-    for (let c = 0; c < neededCols; c++) {
-      const colDiv = document.createElement('div');
-      colDiv.className = `${colClass} mb-3`;
-
-      // Use Bootstrap's grid utility to stack buttons with spacing
-      const stackDiv = document.createElement('div');
-      stackDiv.className = 'd-grid gap-2';
-
-      const start = c * MAX_PER_COLUMN;
-      const end   = start + MAX_PER_COLUMN;
-      const chunk = items.slice(start, end);
-
-      chunk.forEach(text => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'btn btn-info';
-        btn.textContent = text;
-        stackDiv.appendChild(btn);
-      });
-
-      colDiv.appendChild(stackDiv);
-      containerRow.appendChild(colDiv);
-    }
-
-    document.addEventListener("keydown", function(event) {
-		  if (event.key === "Escape") {
-		    const openForms = document.querySelectorAll(".form-container, .popup, .modal");
-
-		    openForms.forEach(form => {
-		      // You can add additional logic here if needed
-		      form.style.display = "none";
-		    });
-		  }
-		});
 
     function openForm(formID) {
       const popup = document.getElementById(formID);
@@ -279,84 +504,20 @@
       }
     }
 
-	  const sidebar = document.getElementById('sidebar');
-    const toggleBtn = document.getElementById('toggleBtn');
-    const removeButton = document.getElementById('removeFoodFields');
-    const alertEl = document.getElementById("autoAlert");
-    const infoBox = document.getElementById('autoAlertInfo');
-
-    toggleBtn.addEventListener('click', () => {
-      sidebar.classList.toggle('collapsed');
-      if(toggleBtn.innerHTML.includes('☰')) {
-        toggleBtn.innerHTML = '>'
-      } else {
-        toggleBtn.innerHTML = '☰'
-      }
-    });
-
-    const linkInput = document.getElementById("foodItem");
-    let debounceTimer;
-
-    removeButton.addEventListener('click', () => {
-      document.querySelectorAll('.auto-scraped').forEach(element => {
-        element.remove();
-      });
-      removeButton.style.display = "none";
-      linkInput.value = "";
-    });
-
-    linkInput.addEventListener("input", (event) => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const value = event.target.value.trim();
-
-        // Check if input is empty
-        if (!value) {
-          console.log("Input cleared. Skipping fetch.");
-          document.querySelectorAll('.auto-scraped').forEach(element => {
-            element.remove();
-          });
-          return;
-        }
-
-        // Check if value is a valid URL
-        try {
-          new URL(value);
-        } catch {
-          console.log("Invalid URL format. Skipping fetch.");
-          return;
-        }
-
-        document.querySelectorAll('.auto-scraped').forEach(element => {
-          element.remove();
-        });
-
-        fetch('/proxy?url=' + encodeURIComponent(event.target.value))
-          .then(res => res.json())
-          .then(data => {
-              data.push({
-                nutrient: 'Html Link',
-                amount: value,
-              });
-            renderNutrition(data);
-          });
-      }, 800);
-    });
-
-    function renderNutrition(nutritionArray) {
-      if (!Array.isArray(nutritionArray)) {
+    function renderNutrition(inputArray) {
+      if (!Array.isArray(inputArray)) {
         console.warn("Unexpected response format");
         return;
       }
 
       const parentDiv = document.getElementById('foodForm');
-      const formContainer = parentDiv.querySelector('#foodDiv');
-      const referenceChild = formContainer.querySelector('#foodRule');
+      const formContainer = parentDiv.querySelector('.form-container');
+      const referenceChild = formContainer.querySelector('.form-divider');
 
-      linkInput.value = nutritionArray[0]['product'];
-      removeButton.style.display = 'inline-block';
+      linkInput.value = inputArray[0]['product'];
+      clearFoodFields.style.display = 'inline-block';
 
-      nutritionArray.filter(item => item.nutrient).reverse().forEach(item => {
+      inputArray.filter(item => item.nutrient).reverse().forEach(item => {
         let numeric = '';
         const wrapper = document.createElement('div');
         wrapper.className = 'mb-3 d-flex align-items-center flex-nowrap auto-scraped';
@@ -419,92 +580,19 @@
       });
     }
 
-    document.getElementById("addFood").addEventListener("submit", function(e) {
-      e.preventDefault(); // Stop default form behavior
-
-      const formData = new FormData(this);
-      const jsonData = {};
-
-      formData.forEach((value, key) => {
-        if(key == 'foodItem') {
-          key = 'title';
-        } else if(key.toLowerCase().includes('folate') || key.toLowerCase().includes('folic')) {
-          key = 'folate_folic_acid';
-        } else if (value == '' || value == null) {
-          return;
-        }
-        jsonData[key] = value;
-      });
-
-      try {
-        new URL(jsonData.title);
-        // If it's a valid URL, force an error to hit the catch block
-        throw new Error("Valid URL found — forcing failure.");
-      } catch (err) {
-        if(err.message == "Valid URL found — forcing failure.") {
-          alertEl.classList.remove("alert-info");
-          alertEl.classList.add("alert-danger");
-          infoBox.textContent = "Wait for the url to resolve before submitting.";
-
-          alertEl.style.display = "block";
-          alertEl.classList.add("show");
-
-          // Auto-close after 3 seconds
-          setTimeout(() => {
-            alertEl.classList.remove("show");
-            alertEl.classList.add("hide");
-            setTimeout(() => {
-              alertEl.style.display = "none";
-              alertEl.classList.remove("hide");
-            }, 500); // Delay to finish transition
-          }, 5000);
-          return;
-        }
-      }
-      
-      fetch("/add-food", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(jsonData)
-      })
-      .then(response => response.json())
-      .then(data => {
-        // Show the alert
-        if(data.response.includes("Success")) {
-          alertEl.classList.add("alert-info");
-          alertEl.classList.remove("alert-danger");
-          infoBox.textContent = data.response;
-          document.querySelectorAll('.auto-scraped').forEach(element => {
-            element.remove();
+    function getFoodDB() {
+      foodDBItems = [];
+      fetch('/get-food')
+        .then(response => response.json())
+        .then(data => {
+          data.foodItems.forEach( food => {
+            foodDBItems.push(food);
           });
-          removeButton.style.display = "none";
-          linkInput.value = "";
-          getFoodDB();
-        } else {
-          alertEl.classList.remove("alert-info");
-          alertEl.classList.add("alert-danger");
-          infoBox.textContent = data.response;
-        }
-
-        alertEl.style.display = "block";
-        alertEl.classList.add("show");
-
-        // Auto-close after 3 seconds
-        setTimeout(() => {
-          alertEl.classList.remove("show");
-          alertEl.classList.add("hide");
-          setTimeout(() => {
-            alertEl.style.display = "none";
-            alertEl.classList.remove("hide");
-          }, 500); // Delay to finish transition
-        }, 5000);
-      })
-      .catch(error => {
-        console.error("Error:", error);
-      });
-    });
+        })
+        .catch(error => {
+          console.error('Error fetching data:', error);
+        });
+    }
   </script>
 </body>
 </html>
