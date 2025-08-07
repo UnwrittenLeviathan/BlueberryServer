@@ -59,7 +59,7 @@
       <form id="addFoodForm">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h4 id="form-label-text" class="mb-0">Add New Food</h4>
-          <button type="button" class="btn btn-danger" id="removeFoodFields" style="display: none;">
+          <button type="button" onclick="cleanUpForms()" class="btn btn-danger" id="removeFoodFields" style="display: none;">
             Clear Fields
           </button>
         </div>
@@ -200,7 +200,7 @@
 
     //Change this to be in it's correct spot, when adding recipes, and learn how to cache the results.
     window.addEventListener('DOMContentLoaded', () => {
-      getFoodDB();
+      getFoodFromDB();
       // foodSearchDropdown.style.display = 'block';
     });
 
@@ -222,8 +222,7 @@
       const inputIds = Array.from(document.querySelectorAll('input.manual-scraped, input.auto-scraped'))
         .map(input => input.id.toLowerCase().replace(/ /g, "_"))
         .filter(id => id); // filters out undefined or empty IDs
-      // console.log(inputIds.length);
-      // if(clearFoodFields.style.display == 'none' && inputIds.length > 0) clearFoodFields.style.display = "inline-block";
+
       const filtered = nutritionList.filter(item => !inputIds.includes(item.title.toLowerCase().replace(/ /g, "_")));
       populateDropdown(filtered, nutritionDropdownMenu, nutritionDropdownBtn, nutritionDropdownContainer);
     });
@@ -246,11 +245,11 @@
       nutritionSearchInput.value = "";
     });
 
-    addFoodForm.addEventListener("submit", function(e) {
+    addFoodForm.addEventListener("submit", async function(e) {
       e.preventDefault(); // Stop default form behavior
 
       const formData = new FormData(this);
-      const jsonData = {};
+      const jsonDataFood = {};
 
       formData.forEach((value, key) => {
         if(key == 'foodItem') {
@@ -261,80 +260,68 @@
           return;
         }
         formatted = key.toLowerCase().replace(/ /g, "_");
-        jsonData[formatted] = value;
+        jsonDataFood[formatted] = value;
       });
 
-      try {
-        new URL(jsonData.title);
-        // If it's a valid URL, force an error to hit the catch block
-        throw new Error("Valid URL found — forcing failure.");
-      } catch (err) {
-        if(err.message == "Valid URL found — forcing failure.") {
-          alertEl.classList.remove("alert-info");
-          alertEl.classList.add("alert-danger");
-          infoBox.textContent = "Wait for the url to resolve before submitting.";
 
-          alertEl.style.display = "block";
-          alertEl.classList.add("show");
+      const lowerCaseFoodDBItems = foodDBItems.map(item => item.title.toLowerCase());
+      const isMatch = lowerCaseFoodDBItems.includes(jsonDataFood['title'].toLowerCase());
+      let isValidURL = checkURL(jsonDataFood.title, false);
 
-          // Auto-close after 3 seconds
-          setTimeout(() => {
-            alertEl.classList.remove("show");
-            alertEl.classList.add("hide");
-            setTimeout(() => {
-              alertEl.style.display = "none";
-              alertEl.classList.remove("hide");
-            }, 500); // Delay to finish transition
-          }, 5000);
+      if(isValidURL.success) {
+        let alert = showAlertBox("Please wait for URL to resolve before submitting");
+        return;
+      }
+
+      if(isMatch) {
+        const editFoodChoice = await showConfirmationBox(jsonDataFood['title']+" is already added to the database, do you want to edit it, or cancel?");
+        if (editFoodChoice) {
+          // console.log("Success");
+          editDBItem("/edit-food", jsonDataFood)
+          return;
+        } else {
+          console.log("Cancelled");
           return;
         }
       }
       
-      fetch("/add-food", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(jsonData)
-      })
-      .then(response => response.json())
-      .then(data => {
-        // Show the alert
-        if(data.response.includes("Success")) {
-          alertEl.classList.add("alert-info");
-          alertEl.classList.remove("alert-danger");
-          infoBox.textContent = data.response;
+      const result = await pushDBItemNew("/add-food", jsonDataFood);
+      if(result) getFoodFromDB();
+    });
+
+    foodLinkInput.addEventListener("input", (event) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const value = event.target.value.trim();
+
+        // Check if input is empty
+        if (!value) {
+          // console.log("Input cleared. Skipping fetch.");
           document.querySelectorAll('.auto-scraped').forEach(element => {
             element.remove();
           });
-          document.querySelectorAll('.manual-scraped').forEach(element => {
-            element.value = '';
-          });
-          clearFoodFields.style.display = "none";
-          foodLinkInput.value = "";
-          getFoodDB();
-        } else {
-          alertEl.classList.remove("alert-info");
-          alertEl.classList.add("alert-danger");
-          infoBox.textContent = data.response;
+          return;
         }
 
-        alertEl.style.display = "block";
-        alertEl.classList.add("show");
+        clearFoodFields.style.display = 'inline-block';
 
-        // Auto-close after 3 seconds
-        setTimeout(() => {
-          alertEl.classList.remove("show");
-          alertEl.classList.add("hide");
-          setTimeout(() => {
-            alertEl.style.display = "none";
-            alertEl.classList.remove("hide");
-          }, 500); // Delay to finish transition
-        }, 5000);
-      })
-      .catch(error => {
-        console.error("Error:", error);
-      });
+        // Check if value is a valid URL
+        if (!checkURL(value, false).success) return;
+
+        document.querySelectorAll('.auto-scraped').forEach(element => {
+          element.remove();
+        });
+
+        fetch('/proxy?url=' + encodeURIComponent(value))
+          .then(res => res.json())
+          .then(data => {
+              data.push({
+                nutrient: 'Html Link',
+                amount: value,
+              });
+            renderNutrition(data);
+          });
+      }, 800);
     });
 
     foodSearchInput.addEventListener('blur', () => {
@@ -366,56 +353,6 @@
       } else {
         toggleBtn.innerHTML = '☰'
       }
-    });
-
-    clearFoodFields.addEventListener('click', () => {
-      document.querySelectorAll('.auto-scraped').forEach(element => {
-        element.remove();
-      });
-      document.querySelectorAll('.manual-scraped').forEach(element => {
-        element.remove();
-      });
-      clearFoodFields.style.display = "none";
-      foodLinkInput.value = "";
-    });
-
-    foodLinkInput.addEventListener("input", (event) => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const value = event.target.value.trim();
-
-        // Check if input is empty
-        if (!value) {
-          console.log("Input cleared. Skipping fetch.");
-          document.querySelectorAll('.auto-scraped').forEach(element => {
-            element.remove();
-          });
-          return;
-        }
-
-        clearFoodFields.style.display = 'inline-block';
-
-        // Check if value is a valid URL
-        try {
-          new URL(value);
-        } catch {
-          return;
-        }
-
-        document.querySelectorAll('.auto-scraped').forEach(element => {
-          element.remove();
-        });
-
-        fetch('/proxy?url=' + encodeURIComponent(event.target.value))
-          .then(res => res.json())
-          .then(data => {
-              data.push({
-                nutrient: 'Html Link',
-                amount: value,
-              });
-            renderNutrition(data);
-          });
-      }, 800);
     });
 
     function populateDropdown(list, dropdownMenu, dropdownBtn, dropdownContainer) {
@@ -612,7 +549,7 @@
       });
     }
 
-    function getFoodDB() {
+    function getFoodFromDB() {
       foodDBItems = [];
       fetch('/get-food')
         .then(response => response.json())
@@ -624,6 +561,158 @@
         .catch(error => {
           console.error('Error fetching data:', error);
         });
+    }
+
+    function cleanUpForms() {
+      document.querySelectorAll('.auto-scraped').forEach(element => {
+        element.remove();
+      });
+      document.querySelectorAll('.manual-scraped').forEach(element => {
+        element.value = '';
+      });
+      clearFoodFields.style.display = "none";
+      foodLinkInput.value = "";
+    }
+
+    function showAlertBox(alertText) {
+      var result;
+      switch (true) {
+        case alertText.includes("Success"):
+          alertEl.classList.add("alert-info");
+          alertEl.classList.remove("alert-danger");
+          result = true;
+          break;
+        case alertText.includes("temperature"):
+          console.log("Temperature issue");
+          break;
+        default:
+          alertEl.classList.remove("alert-info");
+          alertEl.classList.add("alert-danger");
+          result = false;
+      }
+      infoBox.textContent = alertText;
+      alertEl.style.display = "block";
+      alertEl.classList.add("show");
+
+      // Auto-close after 3 seconds
+      setTimeout(() => {
+        alertEl.classList.remove("show");
+        alertEl.classList.add("hide");
+        setTimeout(() => {
+          alertEl.style.display = "none";
+          alertEl.classList.remove("hide");
+        }, 500); // Delay to finish transition
+      }, 5000);
+      return result;
+    }
+
+    async function showConfirmationBox(message) {
+      return new Promise(resolve => {
+        const modal = document.createElement('div');
+        modal.innerHTML = `
+          <div class="modal fade" tabindex="-1" inert>
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <div class="modal-header ${message.includes("Success") ? 'bg-info' : 'bg-danger'} text-white">
+                  <h5 class="modal-title">Confirm</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">${message}</div>
+                <div class="modal-footer">
+                  <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                  <button class="btn btn-primary">Confirm</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+
+        const modalEl = modal.querySelector('.modal');
+        modalEl.removeAttribute('inert');
+
+        const bsModal = new bootstrap.Modal(modalEl);
+        bsModal.show();
+
+        modal.querySelector('.btn-primary').onclick = () => {
+          resolve(true);
+          bsModal.hide();
+        };
+        modal.querySelector('.btn-secondary').onclick = () => {
+          resolve(false);
+          bsModal.hide();
+        };
+
+        modalEl.addEventListener('hidden.bs.modal', () => {
+          modalEl.setAttribute('inert', '');
+          modal.remove();
+        });
+      });
+    }
+
+    function checkURL(inputURL, failCase) {
+      /*
+        If it is a valid URL, and failcase is true, the function fails
+        If it is not a valid URL and failcase is true, the function passes
+        If it is a valid URL and failcase is false, the function passes
+        If it is not a valid URL and failcase is false, the function fails
+      */
+      let success = false;
+      let message = "";
+      try {
+        new URL(inputURL);
+        success = true;
+      } catch (err) {
+        message = err.message;
+      }
+      if (failCase) success = !success;
+      return {
+        'success': success,
+        'message': message
+      };
+    }
+
+    async function pushDBItemNew(route, jsonData) {
+      let success = false;
+      try {
+        const response = await fetch(route, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(jsonData)
+        });
+
+        const data = await response.json();
+        success = showAlertBox(data.response);
+        if(success) cleanUpForms();
+        return success; // Only return true after successful completion
+      } catch (error) {
+        console.error("Error:", error);
+        return success; // Return false if something goes wrong
+      }
+    }
+
+    async function editDBItem(route, jsonData) {
+      let success = false;
+      try {
+        const response = await fetch(route, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(jsonData)
+        });
+
+        const data = await response.json();
+        success = showAlertBox(data.response);
+        console.log(data.response);
+        if(success) cleanUpForms();
+        return success; // Only return true after successful completion
+      } catch (error) {
+        console.error("Error:", error);
+        return success; // Return false if something goes wrong
+      }
     }
   </script>
 </body>

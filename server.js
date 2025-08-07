@@ -369,6 +369,11 @@ wsServer.on('connection', (ws, req)=>{
 	});
 });
 
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Proxy running on http://localhost:${PORT}`));
+
+app.listen(HTTP_PORT, ()=> console.log('HTTP server listening at '+HTTP_PORT));
+
 app.use(express.static("."));
 app.use(cors());
 app.use(bodyParser.json());
@@ -376,6 +381,7 @@ app.use(bodyParser.json());
 app.engine('php', phpExpress.engine);
 app.set('views', path.join(__dirname, 'Routes'));
 app.set('view engine', 'php');
+
 
 // Route all .php files through the PHP engine
 app.all(/.+\.php$/, phpExpress.router);
@@ -466,6 +472,19 @@ app.post('/add-food', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+app.post('/edit-food', async (req, res) => {
+    try {
+        // if (req.body.requestKey !== requestVideo) {
+        //     return res.status(403).json({ error: 'Unauthorized request' });
+        // }
+
+        response = await editItemInDB(req.body, 'food');
+        res.json({ response });
+    } catch (error) {
+        console.error('Server error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 app.get('/get-food', async (req, res) => {
     try {
         const foodItems = await new Promise((resolve, reject) => {
@@ -491,110 +510,19 @@ app.get('/proxy', async (req, res) => {
     return res.status(400).json({ error: "Invalid URL" });
   }
 
-  try {
-    const response = await fetch(url);
-    const html = await response.text();
-    const dom = new JSDOM(html);
-    const nutritionDiv = dom.window.document.getElementById('primaryNutrition');
-    const vitaminDiv = dom.window.document.getElementById('vitaminNutrition');
-    const servingSizeDt = dom.window.document.querySelector('.serving-size dt');
-    const servingSizeDd = dom.window.document.querySelector('.serving-size dd');
-    const servingsPer = dom.window.document.querySelector('.servings-per');
-    const productName = dom.window.document.querySelector('.product-name');
-    const priceItem = dom.window.document.querySelector('.product-price');
+  let webscrape;
 
-    const servingInfo = {};
-    const results = [];
-    let priceValue = null;
-
-    if(productName) {
-        results.push({
-            product: productName.textContent.trim(),
-        })
+  if(url.includes("hannaford")) {
+    webscrape = await fetchHannafordInfo(url);
+    // console.log(webscrape.results);
+    if(webscrape.success) {
+        res.json(webscrape.results);
     }
-
-    if (servingsPer) {
-        results.push({
-            nutrient: "Total Servings",
-            amount: servingsPer.textContent.trim(),
-        });
+    else {
+        res.status(500).json({ error: "Error fetching or parsing content" });
     }
-
-    if (servingSizeDt && servingSizeDd) {
-        results.push({
-            nutrient: servingSizeDt.textContent.trim(),
-            amount: servingSizeDd.textContent.trim()
-        });
-    }
-
-    if (priceItem) {
-      const regularPrice = priceItem.querySelector('.price').textContent.trim();
-
-      if (regularPrice) {
-        results.push({
-            nutrient: "Price",
-            amount: regularPrice,
-        });
-      }
-    }
-
-    if (nutritionDiv) {
-      const children = Array.from(nutritionDiv.children);
-
-      children.forEach(child => {
-        // Skip if this child is contained in vitaminNutrition
-        if (vitaminDiv && vitaminDiv.contains(child)) return;
-
-        const text = child.textContent.trim();
-        if (!text) return;
-
-        const nutrientMatch = text.match(/([\w\s]+)\n\s*(\d+[\d\.\w]*)\n\s*(\d+%)/);
-        if (nutrientMatch) {
-          results.push({
-            nutrient: nutrientMatch[1].trim(),
-            amount: nutrientMatch[2].trim(),
-            // dailyValue: nutrientMatch[3].trim(),
-          });
-          return;
-        }
-
-        const simpleMatch = text.match(/([\w\s]+)\n\s*(\d+[\d\.\w]*)$/);
-        if (simpleMatch) {
-          results.push({
-            nutrient: simpleMatch[1].trim(),
-            amount: simpleMatch[2].trim(),
-            // dailyValue: null,
-          });
-        }
-      });
-    }
-
-    if (vitaminDiv) {
-        const dlElements = vitaminDiv.querySelectorAll('dl');
-
-        dlElements.forEach(dl => {
-          const dt = dl.querySelector('dt');
-          const dd = dl.querySelector('dd');
-
-          if (dt && dd) {
-            results.push({
-              nutrient: dt.textContent.trim(),
-              amount: dd.textContent.trim()
-            });
-          }
-        });
-    }
-
-    res.json(results);
-  } catch (err) {
-    res.status(500).json({ error: "Error fetching or parsing content" });
   }
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Proxy running on http://localhost:${PORT}`));
-
-app.listen(HTTP_PORT, ()=> console.log('HTTP server listening at '+HTTP_PORT));
 
 async function insertItemIfNew(item, tableName) {
   try {
@@ -625,6 +553,37 @@ async function insertItemIfNew(item, tableName) {
     console.error(`Error inserting ${item.title}:`, err);
     result = "Error inserting "+item.title+" into the database: "+err;
     return result;
+  }
+}
+
+async function editItemInDB(item, tableName) {
+  try {
+    const [exists] = await db.promise().query(
+      `SELECT 1 FROM \`${tableName}\` WHERE title = ? LIMIT 1`,
+      [item.title]
+    );
+
+    if (exists.length === 0) {
+      const errorMsg = `Error: Item with title "${item.title}" does not exist in ${tableName}.`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    // Prepare update query
+    const columns = Object.keys(item);
+    const values = columns.map(col => item[col]);
+
+    const setClause = columns.map(col => `\`${col}\` = ?`).join(', ');
+    const query = `UPDATE \`${tableName}\` SET ${setClause}, \`edited_at\` = CURRENT_TIMESTAMP WHERE title = ?`;
+
+    await db.promise().query(query, [...values, item.title]);
+    const result = `Successfully updated: ${item.title}`;
+    console.log(result);
+    return result;
+  } catch (err) {
+    const result = `Failed to update ${item.title}: ${err.message}`;
+    console.error(result);
+    throw err; // Re-throw to propagate the error
   }
 }
 
@@ -665,6 +624,112 @@ function gracefulShutdown() {
     console.log('Cleanup complete. Exiting.');
     process.exit(0);
   }, 1000);
+}
+
+async function fetchHannafordInfo(url) {
+    try {
+        const response = await fetch(url);
+        const html = await response.text();
+        const dom = new JSDOM(html);
+        const nutritionDiv = dom.window.document.getElementById('primaryNutrition');
+        const vitaminDiv = dom.window.document.getElementById('vitaminNutrition');
+        const servingSizeDt = dom.window.document.querySelector('.serving-size dt');
+        const servingSizeDd = dom.window.document.querySelector('.serving-size dd');
+        const servingsPer = dom.window.document.querySelector('.servings-per');
+        const productName = dom.window.document.querySelector('.product-name');
+        const priceItem = dom.window.document.querySelector('.product-price');
+
+        const servingInfo = {};
+        const results = [];
+        let priceValue = null;
+
+        if(productName) {
+            results.push({
+                product: productName.textContent.trim(),
+            })
+        }
+
+        if (servingsPer) {
+            results.push({
+                nutrient: "Total Servings",
+                amount: servingsPer.textContent.trim(),
+            });
+        }
+
+        if (servingSizeDt && servingSizeDd) {
+            results.push({
+                nutrient: servingSizeDt.textContent.trim(),
+                amount: servingSizeDd.textContent.trim()
+            });
+        }
+
+        if (priceItem) {
+          const regularPrice = priceItem.querySelector('.price').textContent.trim();
+
+          if (regularPrice) {
+            results.push({
+                nutrient: "Price",
+                amount: regularPrice,
+            });
+          }
+        }
+
+        if (nutritionDiv) {
+          const children = Array.from(nutritionDiv.children);
+
+          children.forEach(child => {
+            // Skip if this child is contained in vitaminNutrition
+            if (vitaminDiv && vitaminDiv.contains(child)) return;
+
+            const text = child.textContent.trim();
+            if (!text) return;
+
+            const nutrientMatch = text.match(/([\w\s]+)\n\s*(\d+[\d\.\w]*)\n\s*(\d+%)/);
+            if (nutrientMatch) {
+              results.push({
+                nutrient: nutrientMatch[1].trim(),
+                amount: nutrientMatch[2].trim(),
+                // dailyValue: nutrientMatch[3].trim(),
+              });
+              return;
+            }
+
+            const simpleMatch = text.match(/([\w\s]+)\n\s*(\d+[\d\.\w]*)$/);
+            if (simpleMatch) {
+              results.push({
+                nutrient: simpleMatch[1].trim(),
+                amount: simpleMatch[2].trim(),
+                // dailyValue: null,
+              });
+            }
+          });
+        }
+
+        if (vitaminDiv) {
+            const dlElements = vitaminDiv.querySelectorAll('dl');
+
+            dlElements.forEach(dl => {
+              const dt = dl.querySelector('dt');
+              const dd = dl.querySelector('dd');
+
+              if (dt && dd) {
+                results.push({
+                  nutrient: dt.textContent.trim(),
+                  amount: dd.textContent.trim()
+                });
+              }
+            });
+        }
+        return {
+            'results': results,
+            'success': true,
+        };
+      } catch (err) {
+        return {
+            'results': err.message,
+            'success': false,
+        };
+      }
 }
 
 // Handle PM2 and keyboard interrupts
