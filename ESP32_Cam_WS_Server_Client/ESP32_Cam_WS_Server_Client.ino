@@ -116,6 +116,9 @@ void setup() {
   config.xclk_freq_hz = 10000000;
   config.frame_size = FRAMESIZE_HD;
   /*
+    FRAMESIZE_HD (1280 x 720)
+    FRAMESIZE_QSXGA (2592 x 1944)
+    FRAMESIZE_FHD (1920 x 1080)
     FRAMESIZE_UXGA (1600 x 1200)
     FRAMESIZE_QVGA (320 x 240)
     FRAMESIZE_CIF (352 x 288)
@@ -127,7 +130,7 @@ void setup() {
   config.pixel_format = PIXFORMAT_JPEG;
   config.grab_mode = CAMERA_GRAB_LATEST;
   config.fb_location = CAMERA_FB_IN_PSRAM;
-  config.jpeg_quality = 12;
+  config.jpeg_quality = 10;
   config.fb_count = 2;
 
   //LED pin init

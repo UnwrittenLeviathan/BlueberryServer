@@ -92,6 +92,7 @@ CREATE TABLE `food_recipe` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+
 -- --------------------------------------------------------
 
 --
@@ -249,3 +250,20 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+CREATE TABLE `food_fridge` (
+  `id` int(11) NOT NULL,
+  `fridge_id` int(11) NOT NULL,
+  `food_id` int(11) NOT NULL,
+  `amount` int(11) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+ALTER TABLE `food_fridge`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `food_id` (`food_id`),
+  ADD KEY `fridge_id` (`fridge_id`);
+
+ALTER TABLE `food_fridge`
+  ADD CONSTRAINT `food_recipe_ibfk_1` FOREIGN KEY (`food_id`) REFERENCES `food` (`id`),
+  ADD CONSTRAINT `food_recipe_ibfk_2` FOREIGN KEY (`fridge_id`) REFERENCES `fridge` (`id`);

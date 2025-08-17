@@ -14,7 +14,7 @@ const phpExpress  = require('php-express')({
 const fetch = require('node-fetch');
 const cors = require('cors');
 const { JSDOM } = require('jsdom');
-
+const { once } = require('events');
 
 require('dotenv').config();
 
@@ -28,12 +28,34 @@ const requestVideo = process.env.REQUEST_VIDEO;
 const timeToRestartVideo = 60/*seconds per minute*/ * 60/*minute per hour*/ * 1000/*milliseconds per second*/;
 const encodingRestartPause = 100; //100 ms time before restarting ffmpeg encoding stream 
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE 
-});
+const db = mysql
+  .createPool({
+    host:     process.env.DB_HOST,
+    user:     process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  })
+  .promise();
+
+// Quick startup check
+;(async function verifyDbConnection() {
+  try {
+    const conn = await db.getConnection();
+    // Option 1: simple ping
+    await conn.ping();
+    // Option 2: lightweight query
+    // await conn.query('SELECT 1');
+    conn.release();
+    console.log('✅ Database connection successful.');
+  } catch (err) {
+    console.error('❌ Unable to connect to database:', err);
+    // Stop the process if DB is down
+    process.exit(1);
+  }
+})();
 
 const wsServer = new WebSocket.Server({port: WS_PORT}, ()=> console.log('WS Server is listening at '+WS_PORT));
 const udpServer = dgram.createSocket('udp4');
@@ -61,40 +83,41 @@ const cameras = {};
 let encodingShutdown = false;
 let cameraIdentifierWS;
 
-db.connect((err) => {
-  if (err) throw err;
-  console.log('Connected to MySQL');
-});
-
 const queryTemp = 'SELECT * FROM temperature ORDER BY timestamp DESC LIMIT 1';
 const queryFood = 'SELECT * FROM food ORDER BY title COLLATE utf8mb4_general_ci ASC';
-db.query(queryTemp, (err, results) => {
-    if (err) {
-        console.error('Error fetching data:', err);
-        return;
-    }
-    if (typeof results[0] !== "undefined") {
-	    temperatureBuffer[results[0]['device_name']] = results[0]['temperature'];
-	}
-});
 
-udpServer.on('message', (msg, rinfo) => {
-    // console.log(msg.toString());
-    if(msg.toString().indexOf("int") == -1) {
-        temperature = msg.toString().substring(msg.toString().lastIndexOf("_")+1);
-        cameraIdentifier = msg.toString().substring(0, 7);
-        // console.log
-        //Update for better error handling.
-        if(temperatureBuffer[cameraIdentifier] !== 'undefined' && temperature != temperatureBuffer[cameraIdentifier] && temperature !== 'undefined' && cameraIdentifier !== 'undefined') {
-        	const sql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
-    	    db.query(sql, [cameraIdentifier, temperature], (err, result) => {
-    	      if (err) throw err;
-    	      console.log(`Temperature ${temperature} logged in database.`);
-    	    });
-        	temperatureBuffer[cameraIdentifier] = temperature;
-        }
-        broadcastMessage(msg.toString());
+async function refreshTemperatureBuffer() {
+  const [rows] = await db.query(queryTemp);
+  if (rows.length > 0) {
+    const { device_name, temperature } = rows[0];
+    temperatureBuffer[device_name] = temperature;
+  }
+}
+
+udpServer.on('message', async (msg, rinfo) => {
+  const text = msg.toString();
+  if (text.includes("int")) return;
+
+  const cameraIdentifier = text.slice(0, 7);
+  const temperature      = text.slice(text.lastIndexOf("_") + 1);
+
+  const prevTemp = temperatureBuffer[cameraIdentifier];
+  if (
+    prevTemp !== undefined &&
+    temperature !== prevTemp &&
+    cameraIdentifier
+  ) {
+    const insertSql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
+    try {
+      await db.query(insertSql, [cameraIdentifier, temperature]);
+      console.log(`Temperature ${temperature} logged in database.`);
+      temperatureBuffer[cameraIdentifier] = temperature;
+    } catch (err) {
+      console.error('DB error on UDP insert:', err);
     }
+  }
+
+  broadcastMessage(text);
 });
 
 udpServer.bind(9090, () => {
@@ -126,7 +149,9 @@ function startEncoding(identifier) {
         stream, // The PassThrough stream is part of camera's state.
         encodingRestarting: false,
         restartTimer: null,
-        jpegBufferQueue: [] // For buffered JPEG frames, if needed.
+        jpegBufferQueue: [], // For buffered JPEG frames, if needed.
+        baseTempFile,
+        outputFile,
     };
 
     cameras[identifier].stream.pipe(ffmpegProcess.stdin);
@@ -386,7 +411,6 @@ app.set('view engine', 'php');
 // Route all .php files through the PHP engine
 app.all(/.+\.php$/, phpExpress.router);
 
-// Now you can
 app.get('/recipes', (req, res) => {
   res.render('recipes');   // looks for Routes/recipes.php
 });
@@ -402,10 +426,6 @@ app.post('/config', async (req, res) => {
         if (req.body.requestKey !== requestKey) {
             return res.status(403).json({ error: 'Unauthorized request' });
         }
-
-        // Simulating an async operation (e.g., database query)
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
-
         res.json({ WS_URL });
     } catch (error) {
         console.error('Server error:', error);
@@ -413,30 +433,20 @@ app.post('/config', async (req, res) => {
     }
 });
 app.post('/temp', async (req, res) => {
-    try {
-        if (req.body.requestKey !== requestTemp) {
-            return res.status(403).json({ error: 'Unauthorized request' });
-        }
-
-        // Simulating an async operation (e.g., database query)
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
-
-        db.query(queryTemp, (err, results) => {
-            if (err) {
-                console.error('Error fetching data:', err);
-                return;
-            }
-            if (typeof results[0] !== "undefined") {
-                temperatureBuffer[results[0]['device_name']] = results[0]['temperature'];
-                // console.log(temperatureBuffer);
-            }
-        });
-
-        res.json({ temperatureBuffer });
-    } catch (error) {
-        console.error('Server error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+  try {
+    if (req.body.requestKey !== requestTemp) {
+      return res.status(403).json({ error: 'Unauthorized request' });
     }
+
+    // Refresh the buffer
+    refreshTemperatureBuffer();
+
+    //Send result
+    res.json({ temperatureBuffer });
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 app.post('/save-video', async (req, res) => {
     try {
@@ -456,29 +466,10 @@ app.post('/save-video', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
 app.post('/add-food', async (req, res) => {
     try {
-        // if (req.body.requestKey !== requestVideo) {
-        //     return res.status(403).json({ error: 'Unauthorized request' });
-        // }
-
-        // Simulating an async operation (e.g., database query)
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulated delay
-        // console.log(req.body)
-        response = await insertItemIfNew(req.body, 'food');
-        res.json({ response });
-    } catch (error) {
-        console.error('Server error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-app.post('/edit-food', async (req, res) => {
-    try {
-        // if (req.body.requestKey !== requestVideo) {
-        //     return res.status(403).json({ error: 'Unauthorized request' });
-        // }
-
-        response = await editItemInDB(req.body, 'food');
+        response = await upsertItemDB(req.body, 'food');
         res.json({ response });
     } catch (error) {
         console.error('Server error:', error);
@@ -486,22 +477,79 @@ app.post('/edit-food', async (req, res) => {
     }
 });
 app.get('/get-food', async (req, res) => {
+  try {
+    const [foodItems] = await db.query(queryFood);
+    res.json({ foodItems });
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/add-recipe', async (req, res) => {
+    let response = {};
     try {
-        const foodItems = await new Promise((resolve, reject) => {
-          db.query(queryFood, (err, results) => {
-            if (err) {
-              return reject(err);
+        let keysToPick = ['title', 'servings', 'description'];
+
+        const recipeJson = keysToPick.reduce((acc, key) => {
+          if (key in req.body) {
+            acc[key] = req.body[key];
+          }
+          return acc;
+        }, {});
+
+        keysToPick = ['title', 'step', 'instruction'];
+
+        const instructionJson = (req.body.instruction || []).map(item => {
+          return keysToPick.reduce((acc, key) => {
+            if (key in item) {
+              acc[key] = item[key];
             }
-            resolve(results);
-          });
+            return acc;
+          }, {});
         });
 
-        res.json({ foodItems });
-      } catch (error) {
+        // console.log(recipeJson);
+        // console.log(instructionJson);
+
+        firstResponse = await upsertItemDB(recipeJson, 'recipe');
+        secondResponse = await upsertItemDB(instructionJson, 'instruction');
+
+        // console.log(firstResponse);
+        // console.log(secondResponse);
+
+        const recipeId = firstResponse.main.ids[0];
+        const recipeInstructionJson = secondResponse.main.ids.map(instructionId => ({
+            recipe_id: recipeId,
+            instruction_id: instructionId
+        }));
+
+        const thirdResponse = await upsertRelationalItems(recipeInstructionJson, 'recipe_instruction', ['recipe_id', 'instruction_id']);
+
+        const recipeFoodJson = (req.body.food || []).map(item => ({
+            recipe_id: recipeId,
+            food_id: item.food_id,
+            amount: item.amount,
+        }));
+
+        const fourthResponse = await upsertRelationalItems(recipeFoodJson, 'recipe_food', ['recipe_id', 'food_id']);
+
+        // console.log(thirdResponse);
+        // console.log(fourthResponse);
+
+        response.resultMessage = [...firstResponse.resultMessage, ...secondResponse.resultMessage, ...thirdResponse.resultMessage, ...fourthResponse.resultMessage].filter(msg => !msg.toLowerCase().includes('success'));
+        if (response.resultMessage.length === 0) {
+          response.resultMessage = [`${recipeJson.title} successfully added to recipes`];
+        }
+        
+        res.json({ response });
+    } catch (error) {
         console.error('Server error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-      }
+        res.status(500).json({ error: 'Internal server error', resultMessage: 'error' });
+    }
 });
+
+
 app.get('/proxy', async (req, res) => {
   const { url } = req.query;
   try {
@@ -524,70 +572,298 @@ app.get('/proxy', async (req, res) => {
   }
 });
 
-async function insertItemIfNew(item, tableName) {
-  try {
-    const [exists] = await db.promise().query(
-      `SELECT 1 FROM \`${tableName}\` WHERE title = ? LIMIT 1`,
-      [item.title]
-    );
+/**
+ * Insert one or more items into `tableName`. Optionally ensure and link
+ * to a related table via `relationalName`, using data in item[relationalName]
+ * or item.relatedId.
+ *
+ * @param  {Object|Object[]} items
+ ]}
+ * @param  {string}           tableName
+ * @returns {string}        success message or fail message
+ */
+async function upsertItemDB(input, tableName) {
+  const conn = await db.getConnection();
 
-    if (exists.length > 0) {
-      //Add functionality to edit if it exists
-      result = `Skipped: ${item.title} already exists.`
-      console.log(result);
-      return result;
+  try {
+    await conn.beginTransaction();
+
+    // Normalize to array
+    const items = Array.isArray(input) ? input : [input];
+
+    // Prepare one summary object
+    const summary = {
+      main: {
+        ids: [],
+        insertedCount: 0,
+        updatedCount: 0
+      },
+      resultMessage: []
+    };
+
+    for (const item of items) {
+      // 1. Look for an existing row by title
+      const selectSql = `
+        SELECT id
+        FROM \`${tableName}\`
+        WHERE title = ?
+        LIMIT 1;
+      `;
+      const [rows] = await conn.query(selectSql, [item.title]);
+
+      let id, message, result;
+
+      if (rows.length > 0) {
+        // 2a. If found → UPDATE
+        id = rows[0].id;
+
+        const colsToUpdate = Object.keys(item).filter(c => c !== 'id' && c !== 'title');
+        const assignments  = colsToUpdate.map(c => `\`${c}\` = ?`).join(', ');
+        const values       = colsToUpdate.map(c => item[c]);
+
+        const updateSql = `
+          UPDATE \`${tableName}\`
+          SET ${assignments}
+          WHERE id = ?;
+        `;
+        [result] = await conn.query(updateSql, [...values, id]);
+
+        summary.main.updatedCount++;
+        message = `Successfully updated ${item.title} in ${tableName}`;
+      } else {
+        // 2b. If not found → INSERT
+        const cols         = Object.keys(item);
+        const placeholders = cols.map(() => '?').join(', ');
+        const values       = cols.map(c => item[c]);
+
+        const insertSql = `
+          INSERT INTO \`${tableName}\`
+            (${cols.map(c => `\`${c}\``).join(',')})
+          VALUES (${placeholders});
+        `;
+        [result] = await conn.query(insertSql, values);
+
+        id = result.insertId;
+        summary.main.insertedCount++;
+        message = `Successfully inserted ${item.title} in ${tableName}`;
+      }
+
+      // Record ID and the message
+      summary.main.ids.push(id);
+      summary.resultMessage.push(message);
     }
 
-    const columns = Object.keys(item);
-    const values = columns.map(col => item[col]);
-    const placeholders = columns.map(() => '?').join(', ');
-
-    const query = `INSERT INTO \`${tableName}\` (${columns.join(', ')}) VALUES (${placeholders})`;
-    // console.log(query);
-    // console.log(values);
-    await db.promise().query(query, values);
-    console.log(`Inserted: ${item.title}`);
-    result = "Successfully added "+item.title+" into the database";
-    return result;
-  } catch (err) {
-    console.error(`Error inserting ${item.title}:`, err);
-    result = "Error inserting "+item.title+" into the database: "+err;
-    return result;
+    // Commit once for the whole batch
+    await conn.commit();
+    summary.resultMessage.forEach(message => {
+        console.log(message);
+    });
+    return summary;
+  } 
+  catch (err) {
+    await conn.rollback();
+    console.error('Transaction failed:', err);
+    throw err;
+  } 
+  finally {
+    conn.release();
   }
 }
 
-async function editItemInDB(item, tableName) {
-  try {
-    const [exists] = await db.promise().query(
-      `SELECT 1 FROM \`${tableName}\` WHERE title = ? LIMIT 1`,
-      [item.title]
-    );
+/**
+ * Inserts or updates rows in a pure‐relational (join) table,
+ * using uniqueColumns to detect existing records.
+ *
+ * @param  {Object|Object[]} input         Single item or array of items to upsert.
+ * @param  {string}         tableName     MySQL table to touch.
+ * @param  {string[]}       uniqueColumns Columns whose combined values define uniqueness.
+ * @returns {Promise<Object>}              { ids: [], insertedCount, updatedCount, messages: [] }
+ */
+async function upsertRelationalItems(input, tableName, uniqueColumns) {
+  const conn = await db.getConnection();
+  const items = Array.isArray(input) ? input : [input];
 
-    if (exists.length === 0) {
-      const errorMsg = `Error: Item with title "${item.title}" does not exist in ${tableName}.`;
-      console.error(errorMsg);
-      throw new Error(errorMsg);
+  // summary of everything we did
+  const summary = {
+    ids: [],
+    insertedCount: 0,
+    updatedCount: 0,
+    resultMessage: []
+  };
+
+  try {
+    await conn.beginTransaction();
+
+    // build reusable WHERE clause e.g. "`parent_id` = ? AND `child_id` = ?"
+    const whereClause = uniqueColumns.map(col => `\`${col}\` = ?`).join(' AND ');
+
+    for (const item of items) {
+      // 1) Collect the values for your unique columns in order
+      const uniqueValues = uniqueColumns.map(col => item[col]);
+
+      // 2) See if this record already exists
+      const selectSql = `
+        SELECT id
+        FROM \`${tableName}\`
+        WHERE ${whereClause}
+        LIMIT 1;
+      `;
+      const [rows] = await conn.query(selectSql, uniqueValues);
+
+      let id, sqlResult, msg;
+
+      if (rows.length) {
+        // → UPDATE
+        id = rows[0].id;
+
+        // pick only the cols that really need updating
+        const colsToUpdate = Object.keys(item)
+          .filter(col => col !== 'id' && !uniqueColumns.includes(col));
+
+        if (colsToUpdate.length) {
+          const assignments = colsToUpdate.map(col => `\`${col}\` = ?`).join(', ');
+          const updateSql   = `
+            UPDATE \`${tableName}\`
+            SET ${assignments}
+            WHERE ${whereClause};
+          `;
+          const values = colsToUpdate.map(col => item[col])
+                        .concat(uniqueValues);
+
+          [sqlResult] = await conn.query(updateSql, values);
+        }
+
+        summary.updatedCount++;
+        msg = `Successfully updated row ${id} in ${tableName}`;
+      } else {
+        // → INSERT everything
+        const cols         = Object.keys(item);
+        const placeholders = cols.map(() => '?').join(', ');
+        const insertSql    = `
+          INSERT INTO \`${tableName}\`
+            (${cols.map(c => `\`${c}\``).join(', ')})
+          VALUES (${placeholders});
+        `;
+        const values = cols.map(c => item[c]);
+
+        [sqlResult] = await conn.query(insertSql, values);
+        id = sqlResult.insertId;
+
+        summary.insertedCount++;
+        msg = `Successfully inserted row ${id} in ${tableName}`;
+      }
+
+      summary.ids.push(id);
+      summary.resultMessage.push(msg);
     }
 
-    // Prepare update query
-    const columns = Object.keys(item);
-    const values = columns.map(col => item[col]);
-
-    const setClause = columns.map(col => `\`${col}\` = ?`).join(', ');
-    const query = `UPDATE \`${tableName}\` SET ${setClause}, \`edited_at\` = CURRENT_TIMESTAMP WHERE title = ?`;
-
-    await db.promise().query(query, [...values, item.title]);
-    const result = `Successfully updated: ${item.title}`;
-    console.log(result);
-    return result;
-  } catch (err) {
-    const result = `Failed to update ${item.title}: ${err.message}`;
-    console.error(result);
-    throw err; // Re-throw to propagate the error
+    await conn.commit();
+    summary.resultMessage.forEach(m => console.log(m));
+    return summary;
+  }
+  catch (err) {
+    await conn.rollback();
+    console.error('Transaction failed:', err);
+    throw err;
+  }
+  finally {
+    conn.release();
   }
 }
 
-function gracefulShutdown() {
+async function deleteItemDB(input, tableName) {
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    // Normalize to array
+    const items = Array.isArray(input) ? input : [input];
+
+    const summary = {
+      main: {
+        ids: [],
+        deletedCount: 0
+      },
+      resultMessage: []
+    };
+
+    for (const item of items) {
+      // 1. Look for an existing row by title
+      const selectSql = `
+        SELECT id
+        FROM \`${tableName}\`
+        WHERE title = ?
+        LIMIT 1;
+      `;
+      const [rows] = await conn.query(selectSql, [item.title]);
+
+      if (rows.length === 0) {
+        summary.resultMessage.push(`No item found with title "${item.title}" in ${tableName}`);
+        continue;
+      }
+
+      const id = rows[0].id;
+
+      // 2. Delete the item by ID
+      const deleteSql = `
+        DELETE FROM \`${tableName}\`
+        WHERE id = ?;
+      `;
+      const [result] = await conn.query(deleteSql, [id]);
+
+      summary.main.ids.push(id);
+      summary.main.deletedCount++;
+      summary.resultMessage.push(`Successfully deleted "${item.title}" from ${tableName}`);
+    }
+
+    await conn.commit();
+    summary.resultMessage.forEach(message => {
+      console.log(message);
+    });
+    return summary;
+  } catch (err) {
+    await conn.rollback();
+    console.error('Transaction failed:', err);
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+async function shutdownCamera(identifier) {
+  const cam = cameras[identifier];
+  const { ffmpegProcess: ff, baseTempFile, outputFile } = cam;
+  if (!ff || ff.killed) return;
+
+  cam.stream.unpipe(ff.stdin);
+  ff.stdin.end();
+
+  // wait for process to really exit
+  const [code, signal] = await once(ff, 'exit');
+  console.log(`FFmpeg for ${identifier} exited (code=${code}, signal=${signal})`);
+
+  // perform rename immediately
+  if (!fs.existsSync(baseTempFile)) {
+    console.error(`No temp file ${baseTempFile} for ${identifier}`);
+    return;
+  }
+
+  try {
+    fs.renameSync(baseTempFile, outputFile);
+    console.log(`Renamed to ${outputFile}`);
+  } catch (err) {
+    console.error(`Rename failed for ${identifier}:`, err);
+  }
+}
+
+async function shutdownAllCameras() {
+  for (const id of Object.keys(cameras)) {
+    await shutdownCamera(id);
+  }
+}
+
+async function gracefulShutdown() {
   console.log('Shutting down gracefully...');
   encodingShutdown = true;
 
@@ -602,22 +878,11 @@ function gracefulShutdown() {
   });
 
   // Close MySQL connection
-  db.end((err) => {
-    if (err) {
-      console.error('Error closing MySQL connection:', err);
-    } else {
-      console.log('MySQL connection closed.');
-    }
-  });
+  db.end()
+    .then(() => console.log('MySQL pool closed.'))
+    .catch(err => console.error('Error closing pool:', err));
 
-  // Stop FFmpeg process if running
-    Object.keys(cameras).forEach((identifier) => {
-        // console.log(`Processing camera: ${identifier}`);
-        if (cameras[identifier].ffmpegProcess && !cameras[identifier].ffmpegProcess.killed) {
-            cameras[identifier].ffmpegProcess.kill('SIGINT');
-            console.log('FFmpeg process terminated.');
-          }
-    });
+  await shutdownAllCameras();
 
   // Allow time for cleanup before exiting
   setTimeout(() => {
@@ -733,5 +998,29 @@ async function fetchHannafordInfo(url) {
 }
 
 // Handle PM2 and keyboard interrupts
-process.on('SIGINT', gracefulShutdown);  // Ctrl+C
-process.on('SIGTERM', gracefulShutdown); // PM2 stop/restart
+process.on('SIGINT', async () => {
+  
+  console.log('SIGINT received – starting cleanup');
+  
+  try {
+    await gracefulShutdown();
+    console.log('Cleanup complete. Exiting.');
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err);
+    process.exit(1);
+  }
+}); // Ctrl+C
+process.on('SIGTERM', async () => {
+  
+  console.log('SIGTERM received – starting cleanup');
+  
+  try {
+    await gracefulShutdown();
+    console.log('Cleanup complete. Exiting.');
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err);
+    process.exit(1);
+  }
+}); // PM2 stop/restart
