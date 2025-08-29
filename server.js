@@ -418,9 +418,6 @@ app.get('/', (req, res) => {
   res.render('home');   // looks for Routes/home.php
 });
 
-// app.get('/', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/home.html')));
-// app.get('/recipes', (req, res)=>res.sendFile(path.resolve(__dirname, './Routes/recipes.html')));
-
 app.post('/config', async (req, res) => {
     try {
         if (req.body.requestKey !== requestKey) {
@@ -485,7 +482,6 @@ app.get('/get-food', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
 app.post('/add-recipe', async (req, res) => {
     let response = {};
     try {
@@ -530,6 +526,7 @@ app.post('/add-recipe', async (req, res) => {
             recipe_id: recipeId,
             food_id: item.food_id,
             amount: item.amount,
+            servings: item.servings
         }));
 
         const fourthResponse = await upsertRelationalItems(recipeFoodJson, 'recipe_food', ['recipe_id', 'food_id']);
@@ -548,8 +545,16 @@ app.post('/add-recipe', async (req, res) => {
         res.status(500).json({ error: 'Internal server error', resultMessage: 'error' });
     }
 });
-
-
+app.get('/get-recipe', async (req, res) => {
+    try {
+        const recipeJson = await fetchRecipesStructured();
+        // console.log(JSON.stringify(recipeJson, null, 2));
+        res.json({ recipeJson });
+      } catch (err) {
+        console.error('Error fetching recipes:', err);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+});
 app.get('/proxy', async (req, res) => {
   const { url } = req.query;
   try {
@@ -769,6 +774,91 @@ async function upsertRelationalItems(input, tableName, uniqueColumns) {
   finally {
     conn.release();
   }
+}
+
+async function fetchRecipesStructured() {
+  // 1. Fetch the flat rows, now including food title
+  const [rows] = await db.query(`
+    SELECT
+      r.id               AS recipe_id,
+      r.title            AS recipe_title,
+      r.servings         AS recipe_servings,
+      r.description      AS recipe_description,
+      rf.food_id         AS food_id,
+      rf.amount          AS food_amount,
+      rf.servings        AS food_servings,
+      f.title            AS food_title,
+      i.title            AS instr_title,
+      i.step             AS instr_step,
+      i.instruction      AS instr_text
+    FROM recipe AS r
+    LEFT JOIN recipe_food AS rf
+      ON r.id = rf.recipe_id
+    LEFT JOIN food AS f
+      ON rf.food_id = f.id
+    LEFT JOIN recipe_instruction AS ri
+      ON r.id = ri.recipe_id
+    LEFT JOIN instruction AS i
+      ON ri.instruction_id = i.id
+    ORDER BY r.id, rf.food_id, ri.instruction_id;
+  `);
+
+  // 2. Group into recipes, tracking seen IDs/titles to avoid duplicates
+  const recipeMap = new Map();
+
+  for (const row of rows) {
+    const rid = row.recipe_id;
+
+    if (!recipeMap.has(rid)) {
+      // Initialize recipe with helper Sets
+      recipeMap.set(rid, {
+        title:       row.recipe_title,
+        servings:    row.recipe_servings,
+        description: row.recipe_description,
+        food:        [],
+        instruction: [],
+        _seenFood:   new Set(),
+        _seenInstr:  new Set()
+      });
+    }
+
+    const recipe = recipeMap.get(rid);
+
+    // Deduplicate food by food_id
+    if (
+      row.food_id !== null &&
+      !recipe._seenFood.has(row.food_id)
+    ) {
+      recipe._seenFood.add(row.food_id);
+      recipe.food.push({
+        food_id: row.food_id,
+        amount:  row.food_amount,
+        servings: row.food_servings,
+        title:   row.food_title    // new field from food table
+      });
+    }
+
+    // Deduplicate instruction by title
+    if (
+      row.instr_title !== null &&
+      !recipe._seenInstr.has(row.instr_title)
+    ) {
+      recipe._seenInstr.add(row.instr_title);
+      recipe.instruction.push({
+        title:       row.instr_title,
+        step:        row.instr_step,
+        instruction: row.instr_text
+      });
+    }
+  }
+
+  // 3. Strip out the helper Sets and return clean JSON
+  const recipeJson = Array.from(recipeMap.values()).map(r => {
+    const { title, servings, description, food, instruction } = r;
+    return { title, servings, description, food, instruction };
+  });
+
+  return recipeJson;
 }
 
 async function deleteItemDB(input, tableName) {

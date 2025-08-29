@@ -10,6 +10,16 @@
 	background-color: deepskyblue;
 }
 
+.card-flex {
+  display: flex;
+  flex-direction: column;
+  height: 100%;        /* parent .col can set a specific height */
+}
+.card-body-flex {
+  flex-grow: 1;        /* lets this area expand */
+  overflow: auto;      /* enable scrolling if content is huge */
+}
+
 .nav-item {
 	background-color: white;
 	padding-left: 1rem;
