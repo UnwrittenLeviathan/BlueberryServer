@@ -4,8 +4,7 @@ IFS=$'\n'
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 SOURCE_DIR="/home/savile/Documents/ESP32-Cam"
-KEYWORD="temp_"
-DATE=$(date +%F)
+DATE=$(date +%F)   # e.g. 2025-09-21
 DEST_DIR="/home/savile/Documents/NAS-ESP32-Images/$DATE"
 
 mkdir -p "$DEST_DIR"
@@ -17,19 +16,19 @@ mapfile -d '' FILES_REL < <(
   find . \
     -type f \
     -iname '*.mp4' \
-    ! -name "*${KEYWORD}*" \
+    ! -name "*${DATE}*" \
     -print0 \
     | sed -z 's|^\./||'
 )
 
 # ─── EXIT IF NOTHING TO DO ─────────────────────────────────────────────────────
 if (( ${#FILES_REL[@]} == 0 )); then
-  echo "⚠️  No .mp4 files found (excluding '*${KEYWORD}*'). Exiting."
+  echo "⚠️  No .mp4 files found (excluding today's date: ${DATE}). Exiting."
   exit 0
 fi
 
 # ─── PRINT FILE LIST ───────────────────────────────────────────────────────────
-echo "📂 Files to transfer (${#FILES_REL[@]}):"
+echo "📂 Files to transfer (${#FILES_REL[@]}) (excluding today's date: ${DATE}):"
 for rel in "${FILES_REL[@]}"; do
   printf "  - %s/%s\n" "$SOURCE_DIR" "$rel"
 done

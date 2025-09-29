@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+<head>
+	<?php include 'head.php';?>
+</head>
+<body style="background-color: #ecf2f9;">
+	<?php include 'body-header.php'; ?>
+	<div class="container card mt-3">
+		<div class="pt-3">
+			<img id="ESP32-1" class="img-fluid d-block mx-auto">
+			<!-- <button onclick="saveVideo()">
+				Save Video
+			</button> -->
+			<!--
+			<button id="ESP32-1-Right" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-1-Left" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-1-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-1-Down" onclick="sendMessage(this.id)">Down</button>
+			-->
+			<hr>
+		</div>
+		<div class="pb-3">
+			<h2 id="cam-one-temp" class="text-center">Updating Temperature...</h2>
+		</div>
+		<!--  -->
+		 
+		<div class="card">
+			<div id="status-metrics" class="text-center mt-2"></div>
+			<!-- <img id="ESP32-2" src="/">
+			<button id="ESP32-2-Right" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-2-Left" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-2-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-2-Down" onclick="sendMessage(this.id)">Down</button> -->
+		</div>
+		<!-- <div class="card">
+			<img id="ESP32-3" src="/">
+			<button id="ESP32-3-Right" onclick="sendMessage(this.id)">Right</button>
+			<button id="ESP32-3-Left" onclick="sendMessage(this.id)">Left</button>
+			<button id="ESP32-3-Up" onclick="sendMessage(this.id)">Up</button>
+			<button id="ESP32-3-Down" onclick="sendMessage(this.id)">Down</button>
+		</div> 
+		<button id="Reset Cameras" onclick="sendMessage(this.id)">Reset Cameras</button> -->
+		
+	</div>
+	<script type="text/javascript">
+		let socket;
+		let urlObject;
+		let cam_one_temp_html = document.getElementById("cam-one-temp");
+		const title_temp = document.getElementById("title-temp");
+		let img_1 = document.getElementById("ESP32-1");
+		// let img_2 = document.getElementById("img_2");
+		// let img_3 = document.getElementById("img_3");
+		let statusMetrics = document.getElementById("status-metrics");
+		let latency = 1000;
+		let pingStart = null;
+		let currentImageUrl;
+
+		function connectWebSocket() {
+		    socket = new WebSocket("ws://10.0.0.6:8888/");
+
+		    socket.onopen = () => {
+		        console.log("WebSocket connected");
+		        socket.send("WEB_CLIENT");
+		    };
+
+		    socket.onmessage = async (message) => {
+		        let arrayBuffer;
+		        let prefix;
+
+		        if (message.data instanceof Blob) {
+		            arrayBuffer = await message.data.arrayBuffer();
+		            const dataView = new DataView(arrayBuffer);
+
+		            prefix = String.fromCharCode(
+		                dataView.getUint8(0),
+		                dataView.getUint8(1),
+		                dataView.getUint8(2),
+		                dataView.getUint8(3)
+		            );
+		        } else if (typeof message.data === "string") {
+		            prefix = message.data.slice(0, 4);
+		        } else {
+		            console.warn("Unknown message format:", message.data);
+		            return;
+		        }
+
+		        // console.log("Message type:", prefix);
+
+		        switch (prefix) {
+		            case "IMG:":
+		                if (arrayBuffer) {
+		                    if (urlObject) {
+		                        URL.revokeObjectURL(urlObject);
+		                        urlObject = null;
+		                    }
+		                    const jpegBytes = arrayBuffer.slice(4);
+		                    const blob = new Blob([jpegBytes], { type: "image/jpeg" });
+		                    urlObject = URL.createObjectURL(blob);
+		                    img_1.src = urlObject;
+		                    currentImageUrl = urlObject;
+		                    // console.log(`JPEG size: ${(jpegBytes.byteLength / 1024).toFixed(2)} KB`);
+		                }
+		                break;
+
+		            case "PONG":
+		            	const sentTime = new DataView(arrayBuffer.slice(4, 12)).getBigUint64(0);
+		                socket.send(`PONG${sentTime}`);
+
+		                // Optional: display image if included
+		                const jpegBytes = arrayBuffer.slice(12);
+		                const blob = new Blob([jpegBytes], { type: "image/jpeg" });
+		                const url = URL.createObjectURL(blob);
+		                img_1.src = url;
+		                currentImageUrl = url;
+		                break;
+
+		            case "JSN:":
+		                if (arrayBuffer) {
+		                    const jsonText = new TextDecoder().decode(arrayBuffer.slice(4));
+		                    try {
+		                        const parsed = JSON.parse(jsonText);
+		                        handleStatusUpdate(parsed);
+		                    } catch (err) {
+		                        console.error("Failed to parse JSON:", err);
+		                    }
+		                }
+		                break;
+
+		            case "WEB_":
+		            case "ESP3":
+		           	case "LAT:":
+		                console.log("Received:", message.data);
+		                break;
+
+		            default:
+		                console.log("Unsupported prefix:", prefix);
+		                break;
+		        }
+		    };
+
+		    socket.onclose = () => {
+		        console.log("WebSocket disconnected. Reconnecting...");
+		        setTimeout(connectWebSocket, 2000);
+		    };
+
+		    socket.onerror = (err) => {
+		        console.error("WebSocket error:", err);
+		    };
+		}
+
+		async function handleStatusUpdate(parsed) {
+            console.log("📡 Status Update Received:", parsed);
+
+            // Update temperature display
+            if (parsed.host_ident === 1 && parsed.dallasTempC !== undefined) {
+            	let tempF = Math.round(parsed.dallasTempC * (9/5) + 32);
+            	tempString = `Current Outside Temperature: ${tempF}°F`;
+	            titleString = `${tempF}°F - Blueberry Pi Server`;
+				// (0°C × 9/5) + 32
+                cam_one_temp_html.innerHTML = tempString;
+                title_temp.innerHTML = titleString;
+            }
+
+            // // Update status metrics panel
+            // statusMetrics.innerHTML = `
+            //     <strong>Camera:</strong> cam_${parsed.host_ident}<br>
+            //     <strong>FPS:</strong> ${parsed.fps.toFixed(1)}<br>
+            //     <strong>Avg Frame Size:</strong> ${parsed.avg_frame_size.toFixed(1)} bytes<br>
+            //     <strong>Capture Time:</strong> ${parsed.avg_capture_time.toFixed(1)} ms<br>
+            //     <strong>Heap:</strong> ${parsed.free_heap} bytes<br>
+            //     <strong>PSRAM:</strong> ${parsed.free_psram} bytes<br>
+            //     <strong>Time:</strong> ${parsed.time}
+            // `;
+		}
+
+		async function getTemp() {
+	        try {
+	            const response = await fetch('/temp', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/json' },
+	                body: JSON.stringify({ requestKey: 'my-client-request-temp' }) 
+	            });
+
+	            const data = await response.json();
+	            tempString = `The current temperature is ${data['temperatureBuffer']['cam_1']}°F`;
+				cam_one_temp_html.innerHTML = tempString;
+	            console.log(tempString);
+	            
+	            titleString = `${data['temperatureBuffer']['cam_1']}°F - Blueberry Pi Server`;
+				title_temp.innerHTML = titleString;
+	        } catch (error) {
+	            console.error('Error:', error);
+	        }
+	    }
+
+		// Start connection
+		connectWebSocket();
+		getTemp();
+	</script>
+</body>
+</html>
