@@ -1,4 +1,3 @@
-<!-- Currently switching over all xxxxxxmenuItems to menuItem and make it flexible -->
 <!DOCTYPE html>
 <html lang="en" translate="no">
 <head>
@@ -105,12 +104,24 @@
           <button type="button" onclick="cleanUpForms()" class="btn btn-danger removeFields" style="display: none;">
             Clear Fields
           </button>
+          <button type="button" onclick="cleanUpFormsComplete()" class="btn btn-danger" id="removeFieldsComplete" style="display: none;">
+            Remove All Fields
+          </button>
         </div>
 
         <div class="form-container">
-          <div class="mb-3 d-flex align-items-center flex-nowrap" style="max-width: 100%;">
+          <div class="mb-3 d-flex align-items-center flex-nowrap dropdown" style="max-width: 100%;">
             <label for="foodItem" class="form-label me-2 mb-0 text-nowrap" style="width: 140px;">Food Name:</label>
-            <input type="text" class="form-control" id="foodItem" name="foodItem" required style="width: 100%;">
+            <!-- <input type="text" class="form-control" id="foodItem" name="foodItem" required style="width: 100%;"> -->
+            <button class="btn btn-primary dropdown-toggle dropdownBtn" onclick="handleFoodDropdown.bind(this, foodDBItems, required=true)()" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="width: 100%;">
+              Click to Add/ Edit Food
+            </button>
+            <div class="dropdownContainer" style="display: none; z-index: 10; min-width: 350px; resize: both; overflow: auto; max-height: 80vh;">
+              <input type="text" name="foodItem" required class="form-control mb-2 ignore searchInput" oninput="handleFoodSearchDropdown.bind(this, foodDBItems)()" onblur="handleFoodSearchDropdownBlur.call(this)" onfocus="handleFoodSearchFocus.call(this)" placeholder="Search food/ add new..." style="position: sticky; top: 0; z-index: 20; background-color: white;" autocomplete="off">
+              <ul class="list-group dropdownMenu">
+                <!-- Filtered items will appear here -->
+              </ul>
+            </div>
           </div>
           <hr class="hr-blurry my-3 form-divider">
           <div class="dropdown mr-3 mb-3 hide-on-update">
@@ -240,25 +251,38 @@
 	</div>
 
   <script>
-    //Add: button next to items to remove just that one, like a red X
-    //move food addition to recipe making
+    /*
+    * 
+    * Sets up global variables that can be refreshed whenever something is added, changed, or deleted.
+    *
+    */
     let foodDBItems = [];
     let recipeDBItems = [];
     let ingredientList = [];
     let instructionList = [];
 
-    let debounceTimer;
+    /*
+    * Global variables that deal with preventing a dropdown with a list of items from disappearing before the item is selected (click happens, and it blurs before the li item is clicked on).
+    */
     let preventBlur = false;
     
+    /*
+    * 
+    * Globabl variables to be used by removeFields and such, so that they don't have to be passed every time
+    *
+    */
     const sidebar = document.getElementById('sidebar');
     const toggleBtn = document.getElementById('toggleBtn');
     const foodLinkInput = document.getElementById("foodItem");
-
     const alertEl = document.getElementById("autoAlert");
     const infoBox = document.getElementById('autoAlertInfo');
-    
-    const addFoodForm = document.getElementById("addFoodForm");
 
+    /*
+    * 
+    * This is an array with the matching keys for what is in the database. It is used to populate drop down lists.
+    * The max array holds the FDA recommended values for each nutritional value to compare against when calculating percentages.
+    *
+    */
     const nutritionList = [
       {title: "Total Servings"},
       {title: "Serving Size"},
@@ -448,17 +472,21 @@
       }
     }
 
-    //Change this to be in it's correct spot, when adding recipes, and learn how to cache the results.
+    /*
+    * 
+    * Event listeners for: when the page loads, get the food and recipes from the database; multi-page forms using the enter key to continue to the next page or submit if on the last; escaping a form no matter what page you're on using the esc key; Preventing default action for mouse down on dropdown containers; adding functionality for the toggle button for collapsing the buttons on the left side of the page.
+    * NOT IMPLEMENTED YET:
+    * Arrow keys to move forward or back in the multi-page forms
+    */
     window.addEventListener('DOMContentLoaded', async () => {
-      getFoodFromDB();
-      // console.log(foodDBItems);
+      await getFoodFromDB();
       await getRecipesFromDB();
+      // console.log(foodDBItems);
       // console.log(maxNutritionValues);
       // console.log(document.querySelectorAll('.form-page'));
       // foodSearchDropdown.style.display = 'block';
     });
 
-    //Add event listener to each form page where if not on the last page, go to the next page if the enter key is hit
     document.querySelectorAll('.multi-page-form').forEach(el => {
       let pageCount = el.querySelectorAll('.form-page').length;
       el.querySelectorAll('.form-page').forEach((page, index) => {
@@ -493,6 +521,12 @@
       }
     });
 
+    document.addEventListener('mousedown', e => {
+      if (e.target.closest('.dropdownMenu')) {
+        e.preventDefault();
+      }
+    });
+
     toggleBtn.addEventListener('click', () => {
       sidebar.classList.toggle('collapsed');
       if(toggleBtn.innerHTML.includes('☰')) {
@@ -502,43 +536,11 @@
       }
     });
 
-    // foodLinkInput.addEventListener("input", function (event) {
-    //   clearTimeout(debounceTimer);
-    //   const parentEl = this.closest('.searchable-form');
-    //   clearFoodFields = parentEl.querySelector('.removeFields');
-    //   debounceTimer = setTimeout(() => {
-    //     const value = this.value.trim();
-
-    //     // Check if input is empty
-    //     if (!value) {
-    //       // console.log("Input cleared. Skipping fetch.");
-    //       document.querySelectorAll('.auto-scraped').forEach(element => {
-    //         element.remove();
-    //       });
-    //       return;
-    //     }
-
-    //     clearFoodFields.style.display = 'inline-block';
-
-    //     // Check if value is a valid URL
-    //     if (!checkURL(value, false).success) return;
-
-    //     document.querySelectorAll('.auto-scraped').forEach(element => {
-    //       element.remove();
-    //     });
-
-    //     fetch('/proxy?url=' + encodeURIComponent(value))
-    //       .then(res => res.json())
-    //       .then(data => {
-    //           data.push({
-    //             nutrient: 'Html Link',
-    //             amount: value,
-    //           });
-    //         renderNutrition(data);
-    //       });
-    //   }, 800);
-    // });
-
+    /*
+    * 
+    * 
+    *
+    */
     function validatePage(button, nextPage) {
       const form = button.closest('.form-holder')
       const formPage = button.closest('.form-page');
@@ -599,6 +601,60 @@
       }
       preventBlur = false; // Reset after blur fires
       searchInput.value = "";
+    }
+
+    function handleFoodDropdown(searchArray, withExtras = false, required = false) {
+      const parentEl = this.closest('.dropdown');
+      const dropdownContainer = parentEl.querySelector('.dropdownContainer');
+      const searchInput = parentEl.querySelector('.searchInput');
+      const dropdownList = parentEl.querySelector('.dropdownMenu');
+
+      this.style.display = 'none';
+      dropdownContainer.style.display = 'block';
+      dropdownList.style.display = 'block';
+      searchInput.value = ""
+      searchInput.focus();
+      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped, input.auto-scraped'))
+        .map(input => input.id.toLowerCase().replace(/ /g, "_"))
+        .filter(id => id); // filters out undefined or empty IDs
+
+      const filtered = searchArray.filter(item => !inputIds.includes(item.title.toLowerCase().replace(/ /g, "_")));
+      populateFoodDropdown(parentEl, filtered, withExtras, required);
+    }
+
+    function handleFoodSearchDropdown(searchArray) {
+      const parentEl = this.closest('.dropdown');
+      const query = this.value.toLowerCase();
+
+      const inputIds = Array.from(document.querySelectorAll('input.manual-scraped, input.auto-scraped'))
+        .map(input => input.id.toLowerCase().replace(/ /g, "_"))
+        .filter(id => id);
+      const filtered = searchArray.filter(item => item.title.toLowerCase().includes(query)).filter(item => !inputIds.includes(item.title.toLowerCase().replace(/ /g, "_")));
+      populateFoodDropdown(parentEl, filtered);
+    }
+
+    function handleFoodSearchFocus() {
+      const parentEl = this.closest('.dropdown');
+      const dropdownList = parentEl.querySelector('.dropdownMenu');
+      dropdownList.style.display = 'block';
+    }
+
+    function handleFoodSearchDropdownBlur() {
+      const parentEl = this.closest('.dropdown');
+      const dropdownContainer = parentEl.querySelector('.dropdownContainer');
+      const searchInput = parentEl.querySelector('.searchInput');
+      const parentForm = this.closest('.searchable-form');
+      const dropdownBtn = parentEl.querySelector('.dropdownBtn');
+      const dropdownList = parentEl.querySelector('.dropdownMenu');
+
+      if (!preventBlur && searchInput.value.trim() === "") {
+        dropdownBtn.style.display = 'inline-block';
+        dropdownContainer.style.display = 'none';
+        searchInput.value = "";
+      } else {
+        dropdownList.style.display = 'none';
+      }
+      preventBlur = false; // Reset after blur fires
     }
 
     function addStep() {
@@ -663,6 +719,10 @@
 
     async function handleAddFoodFormSubmit(event) {
       event.preventDefault(); // Stop default form behavior
+      const referenceChild = document.querySelector('#foodForm');
+      const dropdownContainer = referenceChild.querySelector('.dropdownContainer');
+      const dropdownBtn = referenceChild.querySelector('.dropdownBtn');
+      const searchInput = referenceChild.querySelector(".searchInput");
 
       const form = event.target; // The form element
       const formData = new FormData(form);
@@ -679,6 +739,9 @@
         const formatted = key.toLowerCase().replace(/ /g, "_");
         jsonDataFood[formatted] = value;
       });
+
+      console.log(jsonDataFood);
+      // return;
 
       const lowerCaseFoodDBItems = foodDBItems.map(item => item.title.toLowerCase());
       const isMatch = lowerCaseFoodDBItems.includes(jsonDataFood['title'].toLowerCase());
@@ -702,6 +765,10 @@
       if (result) {
         getFoodFromDB();
         cleanUpForms();
+
+        dropdownBtn.style.display = 'inline-block';
+        dropdownContainer.style.display = 'none';
+        searchInput.value = "";
       }
     }
 
@@ -776,8 +843,8 @@
         }
         // console.log(key + " " + value);
       });
-      console.log(jsonData);
-      return;
+      // console.log(jsonData);
+      // return;
 
       const result = await pushDBItemNew("/add-recipe", jsonData);
       if (result) {
@@ -959,6 +1026,133 @@
       dropdownContainer.onkeydown = keyHandler;
     }
 
+    function populateFoodDropdown(referenceChild, jsonData) {
+      const formContainer = referenceChild.closest('.form-container');
+      const dropdownMenu = referenceChild.querySelector('.dropdownMenu');
+      const dropdownContainer = referenceChild.querySelector('.dropdownContainer');
+      const dropdownBtn = referenceChild.querySelector('.dropdownBtn');
+      const searchInput = referenceChild.querySelector(".searchInput");
+      const dropdownList = referenceChild.querySelector('.dropdownMenu');
+      const clearInputsButton = formContainer ? formContainer.closest('form').querySelector('.removeFields') : null;
+      const clearAllButton = formContainer ? formContainer.closest('form').querySelector('#removeFieldsComplete') : null;
+
+      const amountOfItems = jsonData.length;
+      let currentIndex = { value: -1 };
+      let listOfList = [];
+      const keyHandler = createKeyDownHandler(currentIndex, listOfList);
+
+      dropdownMenu.innerHTML = '';
+      if (jsonData.length === 0) {
+        dropdownMenu.innerHTML = '<li class="list-group-item text-muted">No results</li>';
+        return;
+      }
+
+      jsonData.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = item.title;
+        li.style.cursor = 'pointer';
+        li.id = item.title;
+
+        li.addEventListener('mousedown', () => {
+          preventBlur = true; // Prevent blur from hiding dropdown
+        });
+
+        li.addEventListener('click', () => {
+          // console.log(item);
+          // console.log(searchInput);
+          document.querySelectorAll('.manual-scraped').forEach(element => {
+            element.remove();
+          });
+          searchInput.value = item.title;
+          dropdownList.style.display = 'none';
+          searchInput.blur();
+
+          for (const [key, value] of Object.entries(item).reverse()) {
+            if(value != null && key != "Price" && key != "html_link" && key != "edited_at" && key != "created_at" && key != "title")
+            {
+              // console.log(`${key}: ${value}`);
+              const wrapper = document.createElement('div');
+              wrapper.className = 'mb-1 d-flex align-items-center flex-nowrap manual-scraped';
+              wrapper.style.maxWidth = '100%';
+
+              //<span class="text-danger" style="cursor:pointer; font-weight:bold;">&times;</span>
+              const span = document.createElement('span');
+              span.className = 'text-danger manual-scraped fs-2 text-center mb-2';
+              span.style.cursor = 'pointer';
+              span.style.fontWeight = 'bold';
+              span.innerHTML = '&times;';
+              span.addEventListener('click', () => {
+                wrapper.remove();
+                const inputIds = Array.from(document.querySelectorAll('input.manual-scraped'))
+                  .map(input => input.id)
+                  .filter(id => id); // filters out undefined or empty IDs
+                // console.log(inputIds.length);
+                if(clearInputsButton) {
+                  if(clearInputsButton.style.display == 'inline-block' && inputIds.length == 0) clearInputsButton.style.display = "none";
+                }
+              });
+
+              const verticalRule = document.createElement('div');
+              verticalRule.className = 'vr';
+
+              const label = document.createElement('label');
+              label.setAttribute('for', key);
+              label.className = 'form-label me-2 mb-0 text-nowrap manual-scraped';
+              label.style.minwidth = '140px';
+              label.textContent = key.replaceAll("_", " ");
+
+              const input = document.createElement('input');
+              input.type = 'text';
+              input.id = key;//.toLowerCase().replaceAll(" ", "_");
+              input.name = key;//.toLowerCase().replaceAll(" ", "_");
+              input.value = value;
+              input.required = false;
+              input.className = 'form-control manual-scraped mr-2 w-auto ms-auto';
+              input.style.minwidth = '200px';
+
+              if (key === "id") {
+                input.type = 'hidden';
+                label.style.display = 'none';
+                span.style.display = 'none';
+                verticalRule.style.display = 'none';
+              }
+
+              const leftSide = document.createElement('div');
+              leftSide.className = 'd-flex align-items-center gap-2';
+              leftSide.append(span, verticalRule, label);
+
+              const rightSide = document.createElement('div');
+              rightSide.className = 'd-flex align-items-center gap-2 ms-auto';
+              rightSide.append(input);
+
+              wrapper.style.display = 'flex';
+              wrapper.style.justifyContent = 'space-between';
+              wrapper.style.alignItems = 'center';
+              wrapper.style.width = '100%';
+              wrapper.append(leftSide, rightSide);
+
+              if (referenceChild && referenceChild.nextSibling) {
+                formContainer.insertBefore(wrapper, referenceChild.nextSibling);
+              } else {
+                // If there's no next sibling, just append at the end
+                formContainer.appendChild(wrapper);
+              }
+            }
+          }
+          // if(clearInputsButton) {
+            clearInputsButton.style.display = "inline-block";
+            clearAllButton.style.display = "inline-block";
+          // }
+        });
+
+        listOfList.push(li);
+        dropdownMenu.appendChild(li);
+      });
+      
+      dropdownContainer.onkeydown = keyHandler;
+    }
+
     function createKeyDownHandler(currentIndexRef, listOfList) {
       return function handleKeyDown(e) {
         if (e.key === 'ArrowDown') {
@@ -969,7 +1163,7 @@
           e.preventDefault();
           currentIndexRef.value = (currentIndexRef.value - 1 + listOfList.length) % listOfList.length;
           updateHighlight(currentIndexRef.value, listOfList);
-        } else if (e.key === ' ' || e.key === 'Enter') {
+        } else if (e.key === 'Enter') {
           e.preventDefault();
           listOfList.forEach(item => item.classList.remove('active'));
           if (currentIndexRef.value >= 0) {
@@ -1152,38 +1346,58 @@
     }
 
     //Updates a global variable with all the food items in the database
-    function getFoodFromDB() {
-      foodDBItems = [];
-      fetch('/get-food')
-        .then(response => response.json())
-        .then(data => {
-          data.foodItems.forEach( food => {
-            foodDBItems.push(food);
-          });
-          // console.log(foodDBItems);
-        })
-        .catch(error => {
-          console.error('Error fetching data:', error);
-        });
+    async function getFoodFromDB() {
+      try {
+        foodDBItems = [];
+        const response = await fetch('/get-food');
+        const data = await response.json();
+
+        if (Array.isArray(data.foodItems)) {
+          foodDBItems.push(...data.foodItems);
+          // console.log("Food items loaded:", foodDBItems);
+        } else {
+          console.error("Unexpected food data format:", data);
+        }
+        return foodDBItems;
+      } catch (error) {
+        console.error('Error fetching food data:', error);
+        return [];
+      }
     }
+
 
     //Updates a global variable with all the recipe items in the database, and the relations to them
     async function getRecipesFromDB() {
-      recipeDBItems = [];
+      try {
+        recipeDBItems = [];
+        const response = await fetch('/get-recipe');
+        const data = await response.json();
 
-      fetch('/get-recipe')
-        .then(response => response.json())
-        .then(data => {
-          data.recipeJson.forEach( recipe => {
-            recipeDBItems.push(recipe);
-          });
-          // console.log(recipeDBItems);
-          populateRecipes();
-        })
-        .catch(error => {
-          console.error('Error fetching data:', error);
-        });
+        if (data && Array.isArray(data.recipeJson) && data.recipeJson.length > 0) {
+          recipeDBItems.push(...data.recipeJson);
+          // console.log("Recipes loaded:", recipeDBItems);
+        } else {
+          console.error("Unexpected recipe data format:", data);
+        }
+
+        // Separate try block for UI update
+        try {
+          if (recipeDBItems.length > 0) {
+            populateRecipes();
+          } else {
+            console.error("No recipes to populate.");
+          }
+        } catch (error) {
+          console.error("Error populating recipes:", error);
+        }
+
+        return recipeDBItems;
+      } catch (error) {
+        console.error("Error fetching recipes:", error);
+        return [];
+      }
     }
+
 
     function editRecipe() {
       const parentEl = document.getElementById('recipeDisplay');
@@ -1530,7 +1744,7 @@
         
         // left = the numeric value
         let left = document.createElement('span');
-        left.textContent = "Per Serving";
+        left.textContent = `Per Serving (${recipe.servings} total)`;
         
         // right = the text label
         let right = document.createElement('span');
@@ -1586,11 +1800,20 @@
       document.querySelectorAll('#removeFields, .removeFields').forEach(el => {
         el.style.display = "none";
       });
-      foodLinkInput.value = "";
+      if (foodLinkInput instanceof Element) {
+          foodLinkInput.value = "";
+      } else {
+        console.warn("Not a DOM element:", foodLinkInput);
+      }
     }
 
     //Removes all fields from forms that use the below classes for inputs. Called only when something succeeds.
     function cleanUpFormsComplete() {
+      const referenceChild = document.querySelector('#foodForm');
+      const dropdownContainer = referenceChild.querySelector('.dropdownContainer');
+      const dropdownBtn = referenceChild.querySelector('.dropdownBtn');
+      const searchInput = referenceChild.querySelector(".searchInput");
+  
       document.querySelectorAll('.auto-scraped').forEach(element => {
         element.remove();
       });
@@ -1612,7 +1835,14 @@
       document.querySelectorAll('#removeFields, .removeFields').forEach(el => {
         el.style.display = "none";
       });
-      foodLinkInput.value = "";
+      if (foodLinkInput instanceof Element) {
+          foodLinkInput.value = "";
+      } else {
+        console.warn("Not a DOM element: foodLinkInput");
+      }
+      dropdownBtn.style.display = 'inline-block';
+      dropdownContainer.style.display = 'none';
+      searchInput.value = "";
     }
 
     function showAlertBox(alertText) {

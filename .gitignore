@@ -4,3 +4,4 @@ OLD/*
 node_modules/
 cron_log.txt
 */sftp-config.json
+*.txt

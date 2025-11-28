@@ -88,19 +88,31 @@
 
 		        switch (prefix) {
 		            case "IMG:":
-		                if (arrayBuffer) {
-		                    if (urlObject) {
-		                        URL.revokeObjectURL(urlObject);
-		                        urlObject = null;
-		                    }
-		                    const jpegBytes = arrayBuffer.slice(4);
-		                    const blob = new Blob([jpegBytes], { type: "image/jpeg" });
-		                    urlObject = URL.createObjectURL(blob);
-		                    img_1.src = urlObject;
-		                    currentImageUrl = urlObject;
-		                    // console.log(`JPEG size: ${(jpegBytes.byteLength / 1024).toFixed(2)} KB`);
-		                }
-		                break;
+						if (arrayBuffer) {
+					    	if (urlObject) {
+					        	URL.revokeObjectURL(urlObject);
+					        	urlObject = null;
+					    	}
+
+					    	// Extract camera ID from prefix if present
+					    	const prefixText = new TextDecoder().decode(arrayBuffer.slice(0, 5)); // e.g., "IMG:3"
+					    	const cameraId = prefixText.length === 5 ? prefixText.charAt(4) : null;
+
+					    	// Slice off the first 5 bytes if camera ID exists, else 4 bytes
+					    	const jpegBytes = arrayBuffer.slice(cameraId ? 5 : 4);
+					    	const blob = new Blob([jpegBytes], { type: "image/jpeg" });
+					    	urlObject = URL.createObjectURL(blob);
+					    	img_1.src = urlObject;
+					    	currentImageUrl = urlObject;
+
+					    	// Optional: log camera ID
+					    	if (cameraId) {
+					        	console.log(`Received image from camera ${cameraId}`);
+					    	}
+
+					    	// console.log(`JPEG size: ${(jpegBytes.byteLength / 1024).toFixed(2)} KB`);
+						}
+						break;
 
 		            case "PONG":
 		            	const sentTime = new DataView(arrayBuffer.slice(4, 12)).getBigUint64(0);

@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
+
+export PATH="$HOME/.nvm/versions/node/v22.19.0/bin:$PATH"
+pm2 stop server
+
 set -euo pipefail
 IFS=$'\n'
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
 SOURCE_DIR="/home/savile/Documents/ESP32-Cam"
 DATE=$(date +%F)   # e.g. 2025-09-21
-DEST_DIR="/home/savile/Documents/NAS-ESP32-Images/$DATE"
+DEST_DIR="/home/savile/Documents/NAS-ESP32-Images/Shared-Red/ESP32-Cam/$DATE"
 
 mkdir -p "$DEST_DIR"
 
@@ -24,6 +28,7 @@ mapfile -d '' FILES_REL < <(
 # ─── EXIT IF NOTHING TO DO ─────────────────────────────────────────────────────
 if (( ${#FILES_REL[@]} == 0 )); then
   echo "⚠️  No .mp4 files found (excluding today's date: ${DATE}). Exiting."
+  pm2 start server --node-args="--report-uncaught-exception --report-on-fatalerror --report-on-signal --report-signal SIGUSR2"
   exit 0
 fi
 
@@ -52,3 +57,4 @@ tar --remove-files -C "$SOURCE_DIR" -cf - "${FILES_REL[@]}" \
   | tar -xf - -C "$DEST_DIR"
 
 echo -e "\n🎯 Transfer complete!"
+pm2 start server --node-args="--report-uncaught-exception --report-on-fatalerror --report-on-signal --report-signal SIGUSR2"

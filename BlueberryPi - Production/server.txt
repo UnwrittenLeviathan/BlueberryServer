@@ -50,6 +50,7 @@ const TIME_TO_RESTART_VIDEO_MS = 60 * 60 * 1000; // 1 hour in milliseconds
 const ENCODING_RESTART_PAUSE_MS = 100; // Time to wait before restarting ffmpeg
 const PONG_INTERVAL_MS = 10000;
 let lastPongSent = 0;
+const TIMEOUT_MS = 10000; // 10 seconds
 
 // --- Global State ---
 let webClients = [];
@@ -72,7 +73,7 @@ const db = mysql.createPool({
 // --- Server Instances ---
 const app = express();
 const wsServer = new WebSocket.Server({ port: WS_PORT }, () => {
-    console.log(`✅ WS Server is listening at ${WS_PORT}`);
+    console.log(`[${new Date().toLocaleTimeString()}]`,`✅ WS Server is listening at ${WS_PORT}`);
 });
 const udpServer = dgram.createSocket('udp4');
 
@@ -88,16 +89,16 @@ async function initialize() {
         const conn = await db.getConnection();
         await conn.ping();
         conn.release();
-        console.log('✅ Database connection successful.');
+        console.log(`[${new Date().toLocaleTimeString()}]`,'✅ Database connection successful.');
     } catch (err) {
         console.error('❌ Unable to connect to database:', err);
         process.exit(1); // Exit if DB connection fails
     }
 
     // Start listening on all servers
-    app.listen(HTTP_PORT, () => console.log(`✅ HTTP server listening at ${HTTP_PORT}`));
-    app.listen(PORT || 3000, () => console.log(`✅ Proxy running on http://localhost:${PORT || 3000}`));
-    udpServer.bind(9090, () => console.log('✅ UDP server listening on port 9090'));
+    app.listen(HTTP_PORT, () => console.log(`[${new Date().toLocaleTimeString()}]`,`✅ HTTP server listening at ${HTTP_PORT}`));
+    app.listen(PORT || 3000, () => console.log(`[${new Date().toLocaleTimeString()}]`,`✅ Proxy running on http://localhost:${PORT || 3000}`));
+    udpServer.bind(9090, () => console.log(`[${new Date().toLocaleTimeString()}]`,'✅ UDP server listening on port 9090'));
 
     // Set up graceful shutdown handlers
     process.on('SIGINT', gracefulShutdown); // Ctrl+C
@@ -129,7 +130,6 @@ app.get('/recipes', (req, res) => res.render('recipes'));
 // --- API Endpoints ---
 app.post('/config', handleConfig);
 app.post('/temp', handleTemp);
-app.post('/save-video', handleSaveVideo);
 app.post('/add-food', handleAddFood);
 app.get('/get-food', handleGetFood);
 app.post('/add-recipe', handleAddRecipe);
@@ -143,22 +143,22 @@ app.get('/get-recipe', handleGetRecipe);
 
 process.on('uncaughtException', (err) => {
     if (err.code === 'EPIPE') {
-        console.warn("Global EPIPE caught. Likely writing to closed stream.");
+        console.warn(`[${new Date().toLocaleTimeString()}]`,"Global EPIPE caught. Likely writing to closed stream.");
     } else {
-        console.error("Uncaught exception:", err);
+        console.error(`[${new Date().toLocaleTimeString()}]`,"Uncaught exception:", err);
     }
 });
 
 wsServer.on('connection', (ws, req) => {
     const clientIP = req.socket.remoteAddress;
-    console.log(`Client IP: ${clientIP} connected`);
+    console.log(`[${new Date().toLocaleTimeString()}]`,`Client IP: ${clientIP} connected`);
 
     ws.on('message', (data) => handleWsMessage(ws, data));
     ws.on('error', (error) => {
-        console.error("WebSocket error observed: ", error);
+        console.error(`[${new Date().toLocaleTimeString()}]`,"WebSocket error observed: ", error);
         ws.close();
     });
-    ws.on('close', () => console.log(`Client IP: ${clientIP} disconnected`));
+    ws.on('close', () => console.log(`[${new Date().toLocaleTimeString()}]`,`Client IP: ${clientIP} disconnected`));
 });
 
 /**
@@ -170,7 +170,7 @@ function handleWsMessage(ws, data) {
     const prefixLength = 4;
 
     if (!data || data.length < prefixLength) {
-        console.warn("Invalid or too short data received");
+        console.warn(`[${new Date().toLocaleTimeString()}]`,"Invalid or too short data received");
         return;
     }
 
@@ -179,22 +179,29 @@ function handleWsMessage(ws, data) {
 
         switch (header) {
             case "IMG:":
-                processVideoData(data.slice(prefixLength));
+                const headerEnd = data.indexOf(':'); // Find colon
+                const camIdChar = data.toString('utf8').charAt(headerEnd + 1); // ID after colon
+                const camId = `cam_${camIdChar}`;
+                const frameStart = headerEnd + 2; // JPEG starts after ID
+                processVideoData(data.slice(frameStart), camId);
+
+                // processVideoData(data.slice(prefixLength));
                 break;
             case "JSN:":
                 try {
                     let parsedMsg = JSON.parse(data.toString('utf8').slice(prefixLength));
                     handleStatusUpdate(parsedMsg);
                 } catch (jsonErr) {
-                    console.error("JSON parsing error:", jsonErr);
+                    console.error(`[${new Date().toLocaleTimeString()}]`,"JSON parsing error:", jsonErr);
                 }
                 break;
             case "WEB_":
                 webClients.push(ws);
-                console.log("Web client added");
+                startClientLoop(ws);
+                console.log(`[${new Date().toLocaleTimeString()}]`,"Web client added");
                 break;
             case "ESP3":
-                console.log("ESP32 client added");
+                console.log(`[${new Date().toLocaleTimeString()}]`,"ESP32 client added");
                 break;
             case "PONG":
                 const sentTimestamp = parseInt(data.toString('utf8').slice(prefixLength));
@@ -205,91 +212,97 @@ function handleWsMessage(ws, data) {
                     ws.send(`LAT:${ws.latency}`);
                     // console.log(`📶 Round-trip latency from client: ${latency} ms`);
                 } else {
-                    console.warn("Invalid timestamp in PONG message");
-                    console.log(data.toString('utf8').slice(prefixLength));
+                    console.warn(`[${new Date().toLocaleTimeString()}]`,"Invalid timestamp in PONG message");
+                    console.log(`[${new Date().toLocaleTimeString()}]`,data.toString('utf8').slice(prefixLength));
                 }
                 break;
             default:
-                console.log("Unhandled message:", data.toString("utf8"));
+                console.log(`[${new Date().toLocaleTimeString()}]`,"Unhandled message:", data.toString("utf8"));
                 break;
         }
     } catch (err) {
-        console.error("Error in handleWsMessage:", err.stack || err);
+        console.error(`[${new Date().toLocaleTimeString()}]`,"Error in handleWsMessage:", err.stack || err);
     }
+}
+function startClientLoop(client) {
+    client.lastSent = 0;
+    client.lastPongSent = 0;
 
-    //Broadcast only the most recent frame to all connected web clients
-    // webClients = webClients.filter(client => {
-    //     if (client.readyState === WebSocket.OPEN) {
-    //         for (const camId in cameras) {
-    //             const cam = cameras[camId];
-    //             if (cam.latestFrame) {
-    //                 const framedData = Buffer.concat([
-    //                     Buffer.from("IMG:"), // Prefix
-    //                     cam.latestFrame
-    //                 ]);
-    //                 client.send(framedData);
-    //             }
-    //         }
-    //         return true;
-    //     }
-    //     console.log("WEB CLIENT DISCONNECTED");
-    //     return false;
-    // });
+    const sendLoop = setInterval(() => {
+        if (client.readyState !== WebSocket.OPEN) {
+            clearInterval(sendLoop);
+            return;
+        }
+        if (encodingShutdown) return;
+
+        const now = Date.now();
+        const interval = client.latency || 1000;
+
+        if (!client.lastSent || now - client.lastSent >= interval) {
+            // Iterate cameras asynchronously
+            Object.keys(cameras).forEach((camId, idx) => {
+                const cam = cameras[camId];
+                if (!cam?.latestFrame) return;
+
+                let header, framedData;
+                if (!client.lastPongSent || now - client.lastPongSent >= PONG_INTERVAL_MS) {
+                    const timestamp = Buffer.alloc(8);
+                    timestamp.writeBigUInt64BE(BigInt(now));
+                    header = Buffer.concat([Buffer.from("PONG"), timestamp]);
+                    client.lastPongSent = now;
+                } else {
+                    header = Buffer.from("IMG:");
+                }
+                framedData = Buffer.concat([header, cam.latestFrame]);
+
+                // Use async send with callback to avoid blocking
+                client.send(framedData, (err) => {
+                    if (err) {
+                        if (err.code === 'EPIPE') {
+                            console.warn(`[${new Date().toLocaleTimeString()}]`,
+                                "EPIPE during WebSocket send. Client likely disconnected.");
+                        } else {
+                            console.error(`[${new Date().toLocaleTimeString()}]`,
+                                "WebSocket send error:", err);
+                        }
+                        clearInterval(sendLoop);
+                    }
+                });
+
+                client.lastSent = now;
+
+                // Yield between cameras if many
+                if (idx < Object.keys(cameras).length - 1) {
+                    setImmediate(() => {}); // let event loop breathe
+                }
+            });
+        }
+    }, 500);
 }
 
 setInterval(() => {
-    if (encodingShutdown) return;
+  const now = Date.now();
 
-    const now = Date.now();
+  for (const [identifier, cam] of Object.entries(cameras)) {
+    if (!cam) continue;
 
-    webClients = webClients.filter(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            const interval = client.latency || 1000;
+    // Skip if ffmpeg already exited
+    if (!cam.ffmpegProcess || cam.ffmpegProcess.killed || cam.ffmpegProcess.exitCode !== null) {
+      continue;
+    }
 
-            if (!client.lastSent || now - client.lastSent >= interval) {
-                for (const camId in cameras) {
-                    const cam = cameras[camId];
-                    if (cam.latestFrame) {
-                        let header;
-                        let framedData;
+    // Check last frame time
+    if (now - cam.lastFrameTime > TIMEOUT_MS) {
+      console.warn(`[${new Date().toLocaleTimeString()}]`,`${identifier}: No frames received for ${TIMEOUT_MS/1000}s, closing FFmpeg...`);
+      try {
+        removeCamera(identifier);
+      } catch (e) {
+        console.error(`[${new Date().toLocaleTimeString()}]`,`${identifier}: Error closing FFmpeg stdin:`, e);
+      }
+    }
+  }
+}, 1000);
 
-                        // Every 10 seconds, send a PONG frame with timestamp
-                        if (now - lastPongSent >= PONG_INTERVAL_MS) {
-                            const timestamp = Buffer.alloc(8);
-                            timestamp.writeBigUInt64BE(BigInt(now));
-                            header = Buffer.concat([
-                                Buffer.from("PONG"),
-                                timestamp
-                            ]);
-                            framedData = Buffer.concat([header, cam.latestFrame]);
-                            lastPongSent = now;
-                        } else {
-                            header = Buffer.from("IMG:");
-                            framedData = Buffer.concat([header, cam.latestFrame]);
-                        }
-
-                        try {
-                            if (client.readyState === WebSocket.OPEN) {
-                                client.send(framedData);
-                                client.lastSent = now;
-                            }
-                        } catch (err) {
-                            if (err.code === 'EPIPE') {
-                                console.warn("EPIPE during WebSocket send. Client likely disconnected.");
-                            } else {
-                                console.error("WebSocket send error:", err);
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-
-        console.log("WEB CLIENT DISCONNECTED");
-        return false;
-    });
-}, 500);
 
 /**
  * Handles status update from ESP32 client from Websocket connection.
@@ -301,6 +314,7 @@ async function handleStatusUpdate(status) {
     if (!camera) return;
 
     camera.lastStatus = status;
+    broadcastStatus(camId, status);
     // console.log(`Status from ${camId}:`, status);
 
     const temperature = Math.round(status.dallasTempC * (9/5) + 32);
@@ -310,20 +324,34 @@ async function handleStatusUpdate(status) {
         const insertSql = 'INSERT INTO temperature (device_name, temperature) VALUES (?, ?)';
         try {
             await db.query(insertSql, [camId, temperature]);
-            console.log(`Temperature ${temperature} for ${camId} logged in database.`);
+            console.log(`[${new Date().toLocaleTimeString()}]`,`Temperature ${temperature} for ${camId} logged in database.`);
             temperatureBuffer[camId] = temperature;
         } catch (err) {
-            console.error('DB error on UDP insert:', err);
+            console.error(`[${new Date().toLocaleTimeString()}]`,'DB error on UDP insert:', err);
         }
     }
+}
+
+function broadcastStatus(camId, status) {
+    const payload = Buffer.from("JSN:" + JSON.stringify({ camId, status }));
+    webClients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(payload, (err) => {
+                if (err) {
+                    console.error(`[${new Date().toLocaleTimeString()}]`, `WebSocket error sending status to client:`, err);
+                }
+            });
+        }
+    });
 }
 
 /**
  * Processes binary video data from a camera.
  * @param {Buffer} data The raw binary data (JPEG frame).
  */
-function processVideoData(data) {
-    const cameraIdentifier = `cam_${data[12].toString()}`;
+function processVideoData(data, cameraIdentifier) {
+    // const cameraIdentifier = `cam_${data[12].toString()}`;
+    // console.log(cameraIdentifier);
     const currCamera = checkCamera(cameraIdentifier);
     if (!currCamera) return;
 
@@ -332,28 +360,57 @@ function processVideoData(data) {
 
     if (validJPEG) {
         currCamera.latestFrame = validJPEG; // 🆕 Store the latest frame
+        currCamera.lastFrameTime = Date.now();
 
         if (encodingShutdown) {
-            console.log("System shutting down...");
+            console.log(`[${new Date().toLocaleTimeString()}]`,"System shutting down...");
             return;
-        } else if (currCamera.encodingRestarting) {
-            currCamera.jpegBufferQueue.push(validJPEG);
-            console.log("Encoding restarting — buffering frame.");
         } else if (currCamera.ffmpegProcess?.stdin.writable) {
             try {
                 currCamera.stream.write(validJPEG);
             } catch (err) {
                 if (err.code === 'EPIPE') {
-                    console.warn(`Caught EPIPE while writing to ${cameraIdentifier}. Restarting encoding.`);
-                    restartEncoding(cameraIdentifier);
+                    console.warn(`[${new Date().toLocaleTimeString()}]`,`Caught EPIPE while writing to ${cameraIdentifier}. Restarting encoding.`);
+                    // restartEncoding(cameraIdentifier);
                 } else {
-                    console.error(`Unexpected error while writing to stream:`, err);
+                    console.error(`[${new Date().toLocaleTimeString()}]`,`Unexpected error while writing to stream:`, err);
                 }
             }
         } else if (!encodingShutdown) {
-            console.error("Stream not writable — restarting encoding.");
-            restartEncoding(cameraIdentifier);
+            const { ffmpegProcess, stream } = currCamera;
+
+            // Print diagnostic info
+            console.error(
+                `[${new Date().toLocaleTimeString()}]`,
+                `Stream for ${cameraIdentifier} not writable. Details:`,
+                {
+                    streamDestroyed: stream.destroyed,
+                    streamEnded: stream.writableEnded,
+                    stdinDestroyed: ffmpegProcess?.stdin?.destroyed,
+                    stdinWritable: ffmpegProcess?.stdin?.writable,
+                    exitCode: ffmpegProcess?.exitCode,
+                    killed: ffmpegProcess?.killed
+                }
+            );
+
+            // Gracefully shut down this camera
+            shutdownCamera(cameraIdentifier)
+                .then(() => {
+                    delete cameras[cameraIdentifier];
+                    console.log(
+                        `[${new Date().toLocaleTimeString()}]`,
+                        `Camera ${cameraIdentifier} removed from cameras object.`
+                    );
+                })
+                .catch(err => {
+                    console.error(
+                        `[${new Date().toLocaleTimeString()}]`,
+                        `Error shutting down ${cameraIdentifier}:`,
+                        err
+                    );
+                });
         }
+
     }
 }
 
@@ -396,7 +453,7 @@ function checkCamera(identifier) {
     if (cameras[identifier]) {
         return cameras[identifier];
     }
-    console.log(`Adding new camera: ${identifier}`);
+    console.log(`[${new Date().toLocaleTimeString()}]`,`Adding new camera: ${identifier}`);
     return startEncoding(identifier);
 }
 
@@ -409,26 +466,35 @@ function startEncoding(identifier) {
     const { baseTempFile, outputFile } = generateFileNames(identifier);
     const stream = new PassThrough();
 
+
     stream.on('error', (err) => {
         if (err.code === 'EPIPE') {
-            console.warn(`EPIPE caught on stream for ${identifier}. Restarting encoding.`);
-            restartEncoding(identifier);
+            console.warn(`[${new Date().toLocaleTimeString()}]`,`EPIPE caught on stream for ${identifier}. Restarting encoding.`);
+            // restartEncoding(identifier);
         } else {
-            console.error(`Stream error for ${identifier}:`, err);
+            console.error(`[${new Date().toLocaleTimeString()}]`,`Stream error for ${identifier}:`, err);
         }
     });
 
-    console.log(`Starting FFmpeg for ${identifier}: ${outputFile}`);
+    console.log(`[${new Date().toLocaleTimeString()}]`,`Starting FFmpeg stream: ${outputFile}`);
     const ffmpegProcess = spawn("ffmpeg", [
         "-f", "image2pipe",
-        "-framerate", "24",
+        "-use_wallclock_as_timestamps", "1",
+        "-fflags", "+genpts",
         "-i", "pipe:0",
         "-c:v", "h264_v4l2m2m",
         "-b:v", "5M",
-        "-vf", "format=yuv420p",
+        "-vf", `drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:
+                text='%{localtime}': x=10: y=10: fontsize=24: fontcolor=white: box=1: boxcolor=0x00000099,format=yuv420p`,
         "-progress", "-",
         "-nostats",
-        baseTempFile,
+        "-f", "segment",
+        "-segment_time", "3600",           // 1 hour per file
+        "-reset_timestamps", "1",
+        "-force_key_frames", "expr:gte(t,n_forced*10)",
+        "-break_non_keyframes", "1",
+        "-strftime", "1",                  // enable strftime in filenames
+        outputFile,
     ]);
 
     cameras[identifier] = {
@@ -438,8 +504,7 @@ function startEncoding(identifier) {
         restartTimer: null,
         jpegBufferQueue: [],
         latestFrame: null,
-        baseTempFile,
-        outputFile,
+        lastFrameTime: Date.now(),
     };
 
     stream.pipe(ffmpegProcess.stdin);
@@ -447,20 +512,20 @@ function startEncoding(identifier) {
     ffmpegProcess.stdout.on("data", (data) => {
         const output = data.toString();
         if (!output.includes("continue")) {
-            console.log(`FFmpeg Progress (${identifier}): ${output}`);
+            console.log(`[${new Date().toLocaleTimeString()}]`,`FFmpeg Progress (${identifier}): ${output}`);
         }
     });
 
-    ffmpegProcess.on("exit", (code, signal) => handleFFmpegExit(identifier, code, signal));
+    // ffmpegProcess.on("exit", (code, signal) => handleFFmpegExit(identifier, code, signal));
     ffmpegProcess.on("error", (err) => {
         if (err.code === "EPIPE") {
-            console.warn(`EPIPE error for ${identifier}: stream closed unexpectedly.`);
+            console.warn(`[${new Date().toLocaleTimeString()}]`,`EPIPE error for ${identifier}: stream closed unexpectedly.`);
         }
         stream.end();
         ffmpegProcess.stdin.end();
     });
 
-    cameras[identifier].restartTimer = setTimeout(() => restartEncoding(identifier), TIME_TO_RESTART_VIDEO_MS);
+    // cameras[identifier].restartTimer = setTimeout(() => restartEncoding(identifier), TIME_TO_RESTART_VIDEO_MS);
 
     // Flush buffer if any frames were queued during restart
     flushJpegBuffer(identifier);
@@ -468,68 +533,37 @@ function startEncoding(identifier) {
     return cameras[identifier];
 }
 
-/**
- * Restarts the encoding process for a specific camera.
- * @param {string} identifier The camera identifier.
- */
-function restartEncoding(identifier) {
-    const camera = cameras[identifier];
-    if (!camera) {
-        console.error(`Camera ${identifier} not found for restart.`);
-        return;
+async function removeCamera(identifier) {
+  const cam = cameras[identifier];
+  if (!cam) return;
+
+  console.log(`🧹 Removing camera ${identifier}...`);
+  // Prevent concurrent ops
+  cam._removing = true;
+
+  try { cam.stream?.unpipe?.(cam.ffmpegProcess?.stdin); } catch {}
+  try { cam.ffmpegProcess?.stdin?.end?.(); } catch {}
+
+  // Try to exit gracefully, then SIGTERM as fallback
+  let exited = false;
+  const p = (async () => {
+    try { await once(cam.ffmpegProcess, 'exit'); exited = true; } catch {}
+  })();
+
+  // If not exited within ~1s, send SIGTERM
+  setTimeout(() => {
+    if (!exited && cam.ffmpegProcess && !cam.ffmpegProcess.killed) {
+      try { cam.ffmpegProcess.kill('SIGTERM'); } catch {}
     }
+  }, 1000);
 
-    console.log(`🔁 Restarting encoding for ${identifier}...`);
-    camera.encodingRestarting = true;
+  await p; // wait for exit (graceful or after SIGTERM)
+  // Clear any camera-specific timers/queues
+  try { clearTimeout(cam.restartTimer); } catch {}
+  cam.jpegBufferQueue = [];
 
-    try {
-        // Gracefully end the current stream and FFmpeg process
-        if (camera.stream) {
-            camera.stream.unpipe(camera.ffmpegProcess.stdin);
-            camera.stream.end();
-        }
-
-        if (camera.ffmpegProcess?.stdin && !camera.ffmpegProcess.stdin.destroyed) {
-            camera.ffmpegProcess.stdin.end();
-        }
-
-        if (camera.ffmpegProcess && !camera.ffmpegProcess.killed) {
-            camera.ffmpegProcess.kill('SIGTERM');
-        }
-    } catch (err) {
-        console.error(`Error during shutdown of ${identifier}:`, err);
-    }
-
-    // Wait briefly before restarting
-    setTimeout(() => {
-        const newCamera = startEncoding(identifier);
-        newCamera.encodingRestarting = false;
-    }, ENCODING_RESTART_PAUSE_MS);
-}
-
-/**
- * Handles the exit event of an FFmpeg process, renaming the temp file.
- * @param {string} identifier Camera identifier.
- * @param {number|null} code The exit code.
- * @param {string|null} signal The signal that terminated the process.
- */
-function handleFFmpegExit(identifier, code, signal) {
-    const camera = cameras[identifier];
-    if (!camera) return;
-
-    console.log(`FFmpeg for ${identifier} exited with code ${code}, signal ${signal}.`);
-    const { baseTempFile, outputFile } = camera;
-
-    if (fs.existsSync(baseTempFile)) {
-        try {
-            fs.renameSync(baseTempFile, outputFile);
-            console.log(`File renamed for ${identifier}: ${outputFile}`);
-        } catch (renameErr) {
-            console.error(`Error renaming file for ${identifier}:`, renameErr);
-        }
-    } else {
-        console.error(`Source file ${baseTempFile} not found for ${identifier}. Skipping rename.`);
-    }
+  delete cameras[identifier];
+  console.log(`✅ Camera ${identifier} removed.`);
 }
 
 /**
@@ -566,20 +600,6 @@ async function handleTemp(req, res) {
     }
     await refreshTemperatureBuffer();
     res.json({ temperatureBuffer });
-}
-
-async function handleSaveVideo(req, res) {
-    if (req.body.requestKey !== REQUEST_VIDEO) {
-        return res.status(403).json({ error: 'Unauthorized request' });
-    }
-    // TODO: The global `cameraIdentifierWS` is unreliable. This should take an identifier in the request body.
-    const activeCameraId = Object.keys(cameras)[0];
-    if (activeCameraId) {
-        restartEncoding(activeCameraId);
-        res.json({ response: `Restarting video encoding for ${activeCameraId}` });
-    } else {
-        res.status(404).json({ error: 'No active cameras to restart.' });
-    }
 }
 
 async function handleAddFood(req, res) {
@@ -677,47 +697,66 @@ async function handleProxy(req, res) {
  * @returns {Promise<object>} A summary of the transaction.
  */
 async function upsertItemDB(input, tableName) {
-    const conn = await db.getConnection();
-    const items = Array.isArray(input) ? input : [input];
-    const summary = { main: { ids: [], insertedCount: 0, updatedCount: 0 }, resultMessage: [] };
+  const conn = await db.getConnection();
+  const items = Array.isArray(input) ? input : [input];
+  const summary = { main: { ids: [], insertedCount: 0, updatedCount: 0 }, resultMessage: [] };
 
-    try {
-        await conn.beginTransaction();
-        for (const item of items) {
-            const [rows] = await conn.query(`SELECT id FROM \`${tableName}\` WHERE title = ? LIMIT 1;`, [item.title]);
-            let id;
+  try {
+    await conn.beginTransaction();
 
-            if (rows.length > 0) { // Update existing
-                id = rows[0].id;
-                const colsToUpdate = Object.keys(item).filter(c => c !== 'id' && c !== 'title');
-                if (colsToUpdate.length > 0) {
-                    const assignments = colsToUpdate.map(c => `\`${c}\` = ?`).join(', ');
-                    const values = colsToUpdate.map(c => item[c]);
-                    await conn.query(`UPDATE \`${tableName}\` SET ${assignments} WHERE id = ?;`, [...values, id]);
-                }
-                summary.main.updatedCount++;
-                summary.resultMessage.push(`Successfully updated ${item.title} in ${tableName}`);
-            } else { // Insert new
-                const cols = Object.keys(item);
-                const placeholders = cols.map(() => '?').join(', ');
-                const values = cols.map(c => item[c]);
-                const [result] = await conn.query(`INSERT INTO \`${tableName}\` (${cols.map(c => `\`${c}\``).join(',')}) VALUES (${placeholders});`, values);
-                id = result.insertId;
-                summary.main.insertedCount++;
-                summary.resultMessage.push(`Successfully inserted ${item.title} in ${tableName}`);
-            }
-            summary.main.ids.push(id);
+    for (const item of items) {
+      let id;
+      let rows = [];
+
+      if (item.id) {
+        // Prefer lookup by id if provided
+        [rows] = await conn.query(`SELECT id FROM \`${tableName}\` WHERE id = ? LIMIT 1;`, [item.id]);
+      } else if (item.title) {
+        // Fallback: lookup by title
+        [rows] = await conn.query(`SELECT id FROM \`${tableName}\` WHERE title = ? LIMIT 1;`, [item.title]);
+      }
+
+      if (rows.length > 0) {
+        // Update existing
+        id = rows[0].id;
+        const colsToUpdate = Object.keys(item).filter(c => c !== 'id');
+        if (colsToUpdate.length > 0) {
+          const assignments = colsToUpdate.map(c => `\`${c}\` = ?`).join(', ');
+          const values = colsToUpdate.map(c => item[c]);
+          await conn.query(
+            `UPDATE \`${tableName}\` SET ${assignments} WHERE id = ?;`,
+            [...values, id]
+          );
         }
-        await conn.commit();
-        summary.resultMessage.forEach(message => console.log(message));
-        return summary;
-    } catch (err) {
-        await conn.rollback();
-        console.error(`Transaction failed in upsertItemDB for table ${tableName}:`, err);
-        throw err;
-    } finally {
-        conn.release();
+        summary.main.updatedCount++;
+        summary.resultMessage.push(`Successfully updated ${item.title || id} in ${tableName}`);
+      } else {
+        // Insert new
+        const cols = Object.keys(item);
+        const placeholders = cols.map(() => '?').join(', ');
+        const values = cols.map(c => item[c]);
+        const [result] = await conn.query(
+          `INSERT INTO \`${tableName}\` (${cols.map(c => `\`${c}\``).join(',')}) VALUES (${placeholders});`,
+          values
+        );
+        id = result.insertId;
+        summary.main.insertedCount++;
+        summary.resultMessage.push(`Successfully inserted ${item.title || id} in ${tableName}`);
+      }
+
+      summary.main.ids.push(id);
     }
+
+    await conn.commit();
+    summary.resultMessage.forEach(message => console.log(message));
+    return summary;
+  } catch (err) {
+    await conn.rollback();
+    console.error(`Transaction failed in upsertItemDB for table ${tableName}:`, err);
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 /**
@@ -872,15 +911,15 @@ function isValidJPEG(buffer) {
  */
 function repairJPEG(buffer) {
     if (buffer.length < 4) {
-        console.warn("Buffer too small to repair as JPEG.");
+        console.warn(`[${new Date().toLocaleTimeString()}]`,"Buffer too small to repair as JPEG.");
         return null;
     }
     if (buffer.slice(0, 2).toString('hex') !== 'ffd8') {
-        console.log("Missing SOI marker, repairing...");
+        console.log(`[${new Date().toLocaleTimeString()}]`,"Missing SOI marker, repairing...");
         buffer = Buffer.concat([Buffer.from([0xFF, 0xD8]), buffer]);
     }
     if (buffer.slice(-2).toString('hex') !== 'ffd9') {
-        console.log("Missing EOI marker, repairing...");
+        console.log(`[${new Date().toLocaleTimeString()}]`,"Missing EOI marker, repairing...");
         buffer = Buffer.concat([buffer, Buffer.from([0xFF, 0xD9])]);
     }
     return buffer;
@@ -899,11 +938,11 @@ function generateFileNames(identifier) {
     try {
         fs.accessSync(SAVE_FILEPATH, fs.constants.W_OK);
     } catch (err) {
-        console.warn(`${identifier}: Base directory not writable, using backup.`);
+        console.warn(`[${new Date().toLocaleTimeString()}]`,`${identifier}: Base directory not writable, using backup.`);
         activePath = SAVE_FILEPATH_BACK;
     }
 
-    const baseTempFile = path.join(activePath, `.temp_${identifier}.mp4`);
+    const baseTempFile = path.join(activePath, `${identifier}_${formattedDateTime}.mp4`);
     const outputFile = path.join(activePath, `${identifier}_${formattedDateTime}.mp4`);
     
     return { baseTempFile, outputFile };
@@ -920,7 +959,7 @@ async function refreshTemperatureBuffer() {
             temperatureBuffer[device_name] = temperature;
         }
     } catch (error) {
-        console.error("Failed to refresh temperature buffer:", error);
+        console.error(`[${new Date().toLocaleTimeString()}]`,"Failed to refresh temperature buffer:", error);
     }
 }
 
@@ -937,13 +976,13 @@ async function shutdownCamera(identifier) {
     if (!cam || !cam.ffmpegProcess || cam.ffmpegProcess.killed) return;
 
     const { ffmpegProcess, baseTempFile, outputFile, stream } = cam;
-    console.log(`Shutting down camera ${identifier}...`);
+    console.log(`[${new Date().toLocaleTimeString()}]`,`Shutting down camera ${identifier}...`);
     
     stream.unpipe(ffmpegProcess.stdin);
     ffmpegProcess.stdin.end();
 
     const [code, signal] = await once(ffmpegProcess, 'exit');
-    console.log(`FFmpeg for ${identifier} exited (code=${code}, signal=${signal})`);
+    console.log(`[${new Date().toLocaleTimeString()}]`,`FFmpeg for ${identifier} exited (code=${code}, signal=${signal})`);
 
     if (fs.existsSync(baseTempFile)) {
         try {
@@ -966,7 +1005,7 @@ async function gracefulShutdown() {
     // Set the flag to true immediately to prevent re-entry.
     isShuttingDown = true;
 
-    console.log('Shutting down gracefully...');
+    console.log(`[${new Date().toLocaleTimeString()}]`,'Shutting down gracefully...');
     encodingShutdown = true;
 
     // 1. Shut down all camera processes
@@ -979,20 +1018,20 @@ async function gracefulShutdown() {
     });
 
     // 2. Close servers
-    wsServer.close(() => console.log('WebSocket server closed.'));
-    udpServer.close(() => console.log('UDP server closed.'));
+    wsServer.close(() => console.log(`[${new Date().toLocaleTimeString()}]`,'WebSocket server closed.'));
+    udpServer.close(() => console.log(`[${new Date().toLocaleTimeString()}]`,'UDP server closed.'));
 
     // 3. Close database pool
     try {
         await db.end();
-        console.log('MySQL pool closed.');
+        console.log(`[${new Date().toLocaleTimeString()}]`,'MySQL pool closed.');
     } catch (err) {
-        console.error('Error closing MySQL pool:', err);
+        console.error(`[${new Date().toLocaleTimeString()}]`,'Error closing MySQL pool:', err);
     }
 
     // 4. Exit process
     setTimeout(() => {
-        console.log('Cleanup complete. Exiting.');
+        console.log(`[${new Date().toLocaleTimeString()}]`,'Cleanup complete. Exiting.');
         process.exit(0);
     }, 1000);
 }

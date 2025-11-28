@@ -61,10 +61,14 @@ void camera_and_ws_task(void *pvParameters) {
       continue;
     }
 
+    // fb->buf[12] = (uint8_t)HOST_IDENT;
+
     if (isValidJPEG(fb->buf, fb->len)) {
-      const char* header = "IMG:";
+      char header[6]; // Enough for "IMG#:" + null terminator
+      snprintf(header, sizeof(header), "IMG:%d", HOST_IDENT); // e.g., IMG1:
       size_t headerLen = strlen(header);
       size_t totalLen = headerLen + fb->len;
+
 
       uint8_t* wrappedBuf = (uint8_t*)malloc(totalLen);
       if (wrappedBuf) {
